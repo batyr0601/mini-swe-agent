@@ -2,10 +2,10 @@ import json
 import tempfile
 from pathlib import Path
 
-from minisweagent.agents.default import DefaultAgent
-from minisweagent.environments.local import LocalEnvironment
-from minisweagent.models.test_models import DeterministicModel
-from minisweagent.run.utils.save import save_traj
+from minisweagent_tool.agents.default import DefaultAgent
+from minisweagent_tool.environments.local import LocalEnvironment
+from minisweagent_tool.models.test_models import DeterministicModel
+from minisweagent_tool.run.utils.save import save_traj
 
 
 def test_save_traj_includes_class_names():
@@ -41,9 +41,9 @@ def test_save_traj_includes_class_names():
         assert "environment_type" in config
 
         # Verify the actual class names with module paths
-        assert config["agent_type"] == "minisweagent.agents.default.DefaultAgent"
-        assert config["model_type"] == "minisweagent.models.test_models.DeterministicModel"
-        assert config["environment_type"] == "minisweagent.environments.local.LocalEnvironment"
+        assert config["agent_type"] == "minisweagent_tool.agents.default.DefaultAgent"
+        assert config["model_type"] == "minisweagent_tool.models.test_models.DeterministicModel"
+        assert config["environment_type"] == "minisweagent_tool.environments.local.LocalEnvironment"
 
         # Verify other expected data is still present
         assert saved_data["info"]["exit_status"] == "Submitted"

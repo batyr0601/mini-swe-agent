@@ -18,6 +18,9 @@ Examples:
     # From project root
     python scripts/analyze_results.py results/
 
+    # Get help
+    python scripts/analyze_results.py --help
+
 The script reads .traj.json files and minisweagent.log to extract:
     - Total and per-instance costs
     - API call counts
@@ -31,7 +34,9 @@ import sys
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 import re
+import typer
 
 
 def parse_trajectory(traj_file: Path) -> dict:
@@ -118,8 +123,19 @@ def parse_log_timing(log_file: Path) -> dict[str, float]:
     return instance_times
 
 
-def main(results_dir: Path):
+def main(results_dir: Optional[str] = typer.Argument(None, help="Path to results directory (default: ./results)")):
     """Main analysis function."""
+    if results_dir is None:
+        # Default: look for results in current dir or project root
+        results_dir = Path("results")
+        if not results_dir.exists():
+            results_dir = Path(__file__).parent.parent.parent / "results"
+    else:
+        results_dir = Path(results_dir)
+    
+    if not results_dir.exists():
+        print(f"Error: Results directory not found: {results_dir}")
+        sys.exit(1)
     # Find all trajectory files
     traj_files = list(results_dir.glob("*/*.traj.json"))
 
@@ -207,17 +223,5 @@ def main(results_dir: Path):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        results_path = Path(sys.argv[1])
-    else:
-        # Default: look for results in current dir or project root
-        results_path = Path("results")
-        if not results_path.exists():
-            results_path = Path(__file__).parent.parent.parent / "results"
-
-    if not results_path.exists():
-        print(f"Error: Results directory not found: {results_path}")
-        sys.exit(1)
-
-    main(results_path)
+    typer.run(main)
 

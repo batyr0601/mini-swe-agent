@@ -5,9 +5,9 @@ from unittest.mock import Mock
 
 import pytest
 
-from minisweagent.agents.interactive_textual import AddLogEmitCallback, SmartInputContainer, TextualAgent
-from minisweagent.environments.local import LocalEnvironment
-from minisweagent.models.test_models import DeterministicModel
+from minisweagent_tool.agents.interactive_textual import AddLogEmitCallback, SmartInputContainer, TextualAgent
+from minisweagent_tool.environments.local import LocalEnvironment
+from minisweagent_tool.models.test_models import DeterministicModel
 
 
 def get_screen_text(app: TextualAgent) -> str:
@@ -197,7 +197,7 @@ async def test_everything_integration_test():
 
 def test_messages_to_steps_edge_cases():
     """Test the _messages_to_steps function with various edge cases."""
-    from minisweagent.agents.interactive_textual import _messages_to_steps
+    from minisweagent_tool.agents.interactive_textual import _messages_to_steps
 
     # Empty messages
     assert _messages_to_steps([]) == []
