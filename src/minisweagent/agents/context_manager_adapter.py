@@ -8,8 +8,13 @@ from pathlib import Path
 class ContextManagerAdapter:
     """Adapter to interface with context management framework."""
     
-    def __init__(self):
-        """Initialize adapter with direct framework imports."""
+    def __init__(self, workspace_path: str | None = None):
+        """Initialize adapter with direct framework imports.
+        
+        Args:
+            workspace_path: Optional explicit workspace path for .context folder.
+                          If not provided, auto-detects from git root or cwd.
+        """
         try:
             framework_path = Path(__file__).parent / "contextmanager"
             if not framework_path.exists():
@@ -59,6 +64,10 @@ class ContextManagerAdapter:
             self.commands = pkg.commands
             self.filesystem = pkg.filesystem
             self._available = True
+            
+            # Set workspace path if provided
+            if workspace_path:
+                self.set_workspace(workspace_path)
         except Exception as e:
             # Store error for debugging
             import traceback
@@ -66,6 +75,13 @@ class ContextManagerAdapter:
             self.commands = None
             self.filesystem = None
             self._available = False
+    
+    def set_workspace(self, path: str):
+        """Set the workspace root for .context folder."""
+        if not self._available:
+            return
+        self.filesystem.set_workspace_root(path)
+        self.filesystem.ensure_context_directory()
         
     def log_command(self, reasoning_step: str):
         """Log a reasoning step."""
@@ -95,21 +111,19 @@ class ContextManagerAdapter:
         if not self._available:
             return
         import shutil
-        from pathlib import Path
         
         if self.filesystem.branch_exists(name):
             # If it's the current branch, clear current branch
             current = self.filesystem.get_current_branch()
             if current == name:
                 # Clear current branch file
-                context_dir = Path(".context")
+                context_dir = Path(self.filesystem.get_context_dir())
                 current_branch_file = context_dir / ".current_branch"
                 if current_branch_file.exists():
                     current_branch_file.unlink()
             
             # Delete branch directory
-            branches_dir = Path(".context") / "branches"
-            branch_dir = branches_dir / name
+            branch_dir = Path(self.filesystem.get_branch_dir(name))
             if branch_dir.exists():
                 shutil.rmtree(branch_dir)
     
@@ -156,11 +170,12 @@ class ContextManagerAdapter:
             return f"Error: {str(e)}"
 
 
-def get_context_manager(enable: bool = True):
+def get_context_manager(enable: bool = True, workspace_path: str | None = None):
     """Get a context manager adapter instance.
     
     Args:
         enable: Whether to enable context management
+        workspace_path: Optional explicit workspace path for .context folder
     
     Returns:
         ContextManagerAdapter instance or None if disabled/unavailable
@@ -169,7 +184,7 @@ def get_context_manager(enable: bool = True):
         return None
     
     try:
-        adapter = ContextManagerAdapter()
+        adapter = ContextManagerAdapter(workspace_path=workspace_path)
         return adapter if adapter._available else None
     except Exception:
         return None
