@@ -125,16 +125,15 @@ class ContextAwareAgent(DefaultAgent, ContextAwareMixin):
         commands = [cmd.strip() for cmd in command_chain.split(" && ")]
         combined_output = []
         combined_returncode = 0
-        last_action = None
-        
+
         for cmd in commands:
-            last_action = cmd
             # Check if this is a context command
             if cmd.startswith("context_"):
                 result = self._execute_context_command(cmd)
             else:
-                # Regular shell command
-                result = super().execute_action({"action": cmd})
+                # Regular shell command – call env directly so we don't terminate
+                # early on intermediate commands that might print the magic word.
+                result = self.env.execute(cmd)
             
             # Collect output
             output = result.get("output", "")
@@ -147,12 +146,17 @@ class ContextAwareAgent(DefaultAgent, ContextAwareMixin):
             # If command failed, stop chain (like bash && behavior)
             if returncode != 0:
                 break
-        
-        return {
+
+        result = {
             "output": "\n".join(combined_output),
             "returncode": combined_returncode,
-            "action": command_chain
+            "action": command_chain,
         }
+        # Only check for submission after the full chain has run so that
+        # `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git diff --cached`
+        # captures the diff instead of terminating at the echo.
+        self.has_finished(result)
+        return result
     
     def _execute_context_command(self, command: str) -> dict:
         """Execute a context management command."""
