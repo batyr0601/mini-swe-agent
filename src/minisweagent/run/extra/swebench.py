@@ -144,11 +144,11 @@ def process_instance(
 
     try:
         env = get_sb_environment(config, instance)
-        # Get context manager if enabled - use project root for .context folder
+        # Get context manager if enabled - use per-instance .context folder
         agent_config = config.get("agent", {})
         enable_context = agent_config.get("enable_context", False)
-        project_root = Path(__file__).resolve().parents[4]  # src/minisweagent/run/extra -> project root
-        context_manager = get_context_manager(enable=enable_context, workspace_path=str(project_root))
+        instance_dir.mkdir(parents=True, exist_ok=True)
+        context_manager = get_context_manager(enable=enable_context, workspace_path=str(instance_dir))
         
         # Use ContextProgressAgent if context enabled, otherwise ProgressTrackingAgent
         if context_manager:
