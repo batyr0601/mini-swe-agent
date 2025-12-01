@@ -144,13 +144,15 @@ def process_instance(
 
     try:
         env = get_sb_environment(config, instance)
-        # Get context manager if enabled
+        # Get context manager if enabled - use project root for .context folder
         agent_config = config.get("agent", {})
         enable_context = agent_config.get("enable_context", False)
-        context_manager = get_context_manager(enable=enable_context)
+        project_root = Path(__file__).resolve().parents[4]  # src/minisweagent/run/extra -> project root
+        context_manager = get_context_manager(enable=enable_context, workspace_path=str(project_root))
         
         # Use ContextProgressAgent if context enabled, otherwise ProgressTrackingAgent
         if context_manager:
+            print("Context manager enabled")
             agent = ContextProgressAgent(
                 model,
                 env,
@@ -161,6 +163,7 @@ def process_instance(
                 **agent_config,
             )
         else:
+            print("Context manager disabled")
             # Filter out context-specific config keys for ProgressTrackingAgent
             filtered_config = {k: v for k, v in agent_config.items() 
                              if k not in ["enable_context", "context_branch"]}
