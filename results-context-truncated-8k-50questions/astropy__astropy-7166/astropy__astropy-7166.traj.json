@@ -1,0 +1,1136 @@
+{
+  "info": {
+    "exit_status": "Submitted",
+    "submission": "diff --git a/astropy/utils/misc.py b/astropy/utils/misc.py\nindex de3fb01d1..76969e13c 100644\n--- a/astropy/utils/misc.py\n+++ b/astropy/utils/misc.py\n@@ -528,18 +528,57 @@ class InheritDocstrings(type):\n                 not key.startswith('_'))\n \n         for key, val in dct.items():\n-            if (inspect.isfunction(val) and\n-                is_public_member(key) and\n-                val.__doc__ is None):\n+            if is_public_member(key):\n+                # Support plain functions, and descriptors that wrap\n+                # functions: classmethod, staticmethod, and property.\n+                # Determine the underlying function (target) whose\n+                # __doc__ should be set.\n+                target = None\n+                is_prop = is_classmethod = is_staticmethod = False\n+                if inspect.isfunction(val):\n+                    target = val\n+                elif isinstance(val, classmethod):\n+                    target = getattr(val, '__func__', None)\n+                    is_classmethod = True\n+                elif isinstance(val, staticmethod):\n+                    target = getattr(val, '__func__', None)\n+                    is_staticmethod = True\n+                elif isinstance(val, property):\n+                    target = getattr(val, 'fget', None)\n+                    is_prop = True\n+                # If we don't have a target function, skip\n+                if target is None:\n+                    continue\n+                # Only try to inherit if the target has no docstring\n+                if getattr(target, '__doc__', None) is not None:\n+                    continue\n                 for base in cls.__mro__[1:]:\n                     super_method = getattr(base, key, None)\n                     if super_method is not None:\n-                        val.__doc__ = super_method.__doc__\n-                        break\n-\n-        super().__init__(name, bases, dct)\n-\n-\n+                        # Extract the source docstring from the base\n+                        if isinstance(super_method, (classmethod, staticmethod)):\n+                            source = getattr(getattr(super_method, '__func__', None), '__doc__', None)\n+                        elif isinstance(super_method, property):\n+                            source = getattr(getattr(super_method, 'fget', None), '__doc__', None)\n+                        else:\n+                            source = getattr(super_method, '__doc__', None)\n+                        if source:\n+                            # Assign the inherited docstring to the target function\n+                            try:\n+                                target.__doc__ = source\n+                                # For descriptor objects, also replace the entry in the\n+                                # class dict so the descriptor's __doc__ reflects source\n+                                if is_prop:\n+                                    setattr(cls, key, property(target, getattr(val, 'fset', None), getattr(val, 'fdel', None), source))\n+                                elif is_classmethod:\n+                                    setattr(cls, key, classmethod(target))\n+                                elif is_staticmethod:\n+                                    setattr(cls, key, staticmethod(target))\n+                            except Exception:\n+                                # Be conservative: if assignment or replacement fails, ignore\n+                                pass\n+                            break\n+            super().__init__(name, bases, dct)\n class OrderedDescriptor(metaclass=abc.ABCMeta):\n     \"\"\"\n     Base class for descriptors whose order in the class body should be\ndiff --git a/repro_inheritdoc.py b/repro_inheritdoc.py\nnew file mode 100644\nindex 000000000..3f487696f\n--- /dev/null\n+++ b/repro_inheritdoc.py\n@@ -0,0 +1,15 @@\n+from astropy.utils.misc import InheritDocstrings\n+\n+class A(metaclass=InheritDocstrings):\n+    @property\n+    def foo(self):\n+        \"Base property docstring\"\n+        return 1\n+\n+class B(A):\n+    @property\n+    def foo(self):\n+        return 2\n+\n+print(\"B.foo.fget.__doc__:\", repr(B.foo.fget.__doc__))\n+print(\"B.foo.__doc__:\", repr(B.foo.__doc__))\n",
+    "model_stats": {
+      "instance_cost": 0.05665985,
+      "api_calls": 19
+    },
+    "mini_version": "1.17.0",
+    "config": {
+      "agent": {
+        "system_template": "You are a helpful assistant that can interact multiple times with a computer shell to solve programming tasks.\nYour response must contain exactly ONE bash code block with ONE command (or commands connected with && or ||).\n\nInclude a THOUGHT section before your command where you explain your reasoning process.\nFormat your response as shown in <format_example>.\n\n<format_example>\nTHOUGHT: Your reasoning and analysis here\n\n```bash\nyour_command_here\n```\n</format_example>\n\nFailure to follow these rules will cause your response to be rejected.\n",
+        "instance_template": "<pr_description>\nConsider the following PR description:\n{{task}}\n</pr_description>\n\n<instructions>\n# Task Instructions\n\n## Overview\nYou're a software engineer interacting continuously with a computer by submitting commands.\nYou'll be helping implement necessary changes to meet requirements in the PR description.\nYour task is specifically to make changes to non-test files in the current directory in order to fix the issue described in the PR description in a way that is general and consistent with the codebase.\n\nIMPORTANT: This is an interactive process where you will think and issue ONE command, see its result, then think and issue your next command.\n\nFor each response:\n1. Include a THOUGHT section explaining your reasoning and what you're trying to accomplish\n2. Provide exactly ONE bash command to execute\n\n## Important Boundaries\n- MODIFY: Regular source code files in /testbed (this is the working directory for all your subsequent commands)\n- DO NOT MODIFY: Tests, configuration files (pyproject.toml, setup.cfg, etc.)\n\n## Recommended Workflow\n1. Analyze the codebase by finding and reading relevant files\n2. Create a script to reproduce the issue\n3. Edit the source code to resolve the issue\n4. Verify your fix works by running your script again\n5. Test edge cases to ensure your fix is robust\n\n## Command Execution Rules\nYou are operating in an environment where\n1. You write a single command\n2. The system executes that command in a subshell\n3. You see the result\n4. You write your next command\n\nEach response should include:\n1. A **THOUGHT** section where you explain your reasoning and plan\n2. A single bash code block with your command\n\nFormat your responses like this:\n\n<format_example>\nTHOUGHT: Here I explain my reasoning process, analysis of the current situation,\nand what I'm trying to accomplish with the command below.\n\n```bash\nyour_command_here\n```\n</format_example>\n\nCommands must be specified in a single bash code block:\n\n```bash\nyour_command_here\n```\n\n**CRITICAL REQUIREMENTS:**\n- Your response SHOULD include a THOUGHT section explaining your reasoning\n- Your response MUST include EXACTLY ONE bash code block\n- This bash block MUST contain EXACTLY ONE command (or a set of commands connected with && or ||)\n- If you include zero or multiple bash blocks, or no command at all, YOUR RESPONSE WILL FAIL\n- Do NOT try to run multiple independent commands in separate blocks in one response\n- Directory or environment variable changes are not persistent. Every action is executed in a new subshell.\n- However, you can prefix any action with `MY_ENV_VAR=MY_VALUE cd /path/to/working/dir && ...` or write/load environment variables from files\n\nExample of a CORRECT response:\n<example_response>\nTHOUGHT: I need to understand the structure of the repository first. Let me check what files are in the current directory to get a better understanding of the codebase.\n\n```bash\nls -la\n```\n</example_response>\n\nExample of an INCORRECT response:\n<example_response>\nTHOUGHT: I need to examine the codebase and then look at a specific file. I'll run multiple commands to do this.\n\n```bash\nls -la\n```\n\nNow I'll read the file:\n\n```bash\ncat file.txt\n```\n</example_response>\n\nIf you need to run multiple commands, either:\n1. Combine them in one block using && or ||\n```bash\ncommand1 && command2 || echo \"Error occurred\"\n```\n\n2. Wait for the first command to complete, see its output, then issue the next command in your following response.\n\n## Environment Details\n- You have a full Linux shell environment\n- Always use non-interactive flags (-y, -f) for commands\n- Avoid interactive tools like vi, nano, or any that require user input\n- If a command isn't available, you can install it\n\n## Useful Command Examples\n\n### Create a new file:\n```bash\ncat <<'EOF' > newfile.py\nimport numpy as np\nhello = \"world\"\nprint(hello)\nEOF\n```\n\n### Edit files with sed:\n```bash\n# Replace all occurrences\nsed -i 's/old_string/new_string/g' filename.py\n\n# Replace only first occurrence\nsed -i 's/old_string/new_string/' filename.py\n\n# Replace first occurrence on line 1\nsed -i '1s/old_string/new_string/' filename.py\n\n# Replace all occurrences in lines 1-10\nsed -i '1,10s/old_string/new_string/g' filename.py\n```\n\n### View file content:\n```bash\n# View specific lines with numbers\nnl -ba filename.py | sed -n '10,20p'\n```\n\n### Any other command you want to run\n```bash\nanything\n```\n\n## Submission\nWhen you've completed your work (reading, editing, testing), and cannot make further progress\nissue exactly the following command:\n\n```bash\necho COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && git diff --cached\n```\n\nThis command will submit your work.\nYou cannot continue working (reading, editing, testing) in any way on this task after submitting.\n</instructions>\n",
+        "timeout_template": "The last command <command>{{action['action']}}</command> timed out and has been killed.\nThe output of the command was:\n <output>\n{{output}}\n</output>\nPlease try another command and make sure to avoid those requiring interactive input.",
+        "format_error_template": "Please always provide EXACTLY ONE action in triple backticks, found {{actions|length}} actions.\n\nPlease format your action in triple backticks as shown in <response_example>.\n\n<response_example>\nHere are some thoughts about why you want to perform the action.\n\n```bash\n<action>\n```\n</response_example>\n\nIf you have completed your assignment, please consult the first message about how to\nsubmit your solution (you will not be able to continue working on this task after that).\n",
+        "action_observation_template": "<returncode>{{output.returncode}}</returncode>\n{% if output.output | length < 10000 -%}\n<output>\n{{ output.output -}}\n</output>\n{%- else -%}\n<warning>\nThe output of your last command was too long.\nPlease try a different command that produces less output.\nIf you're looking at a file you can try use head, tail or sed to view a smaller number of lines selectively.\nIf you're using grep or find and it produced too much output, you can use a more selective search pattern.\nIf you really need to see something from the full command's output, you can redirect output to a file and then search in that file.\n</warning>\n{%- set elided_chars = output.output | length - 10000 -%}\n<output_head>\n{{ output.output[:5000] }}\n</output_head>\n<elided_chars>\n{{ elided_chars }} characters elided\n</elided_chars>\n<output_tail>\n{{ output.output[-5000:] }}\n</output_tail>\n{%- endif -%}\n",
+        "action_regex": "```bash\\s*\\n(.*?)\\n```",
+        "step_limit": 100,
+        "cost_limit": 0.5,
+        "max_context_tokens": 8000,
+        "enable_context": true,
+        "context_branch": "swebench-astropy__astropy-7166"
+      },
+      "model": {
+        "model_name": "openai/gpt-5-mini",
+        "model_kwargs": {
+          "drop_params": true,
+          "temperature": 0.0
+        },
+        "litellm_model_registry": null,
+        "set_cache_control": null,
+        "cost_tracking": "default"
+      },
+      "environment": {
+        "image": "docker.io/swebench/sweb.eval.x86_64.astropy_1776_astropy-7166:latest",
+        "cwd": "/testbed",
+        "env": {
+          "PAGER": "cat",
+          "MANPAGER": "cat",
+          "LESS": "-R",
+          "PIP_PROGRESS_BAR": "off",
+          "TQDM_DISABLE": "1"
+        },
+        "forward_env": [],
+        "timeout": 60,
+        "executable": "docker",
+        "run_args": [
+          "--rm"
+        ],
+        "container_timeout": "2h",
+        "pull_timeout": 120
+      },
+      "agent_type": "minisweagent_tool.agents.context_progress_agent.ContextProgressAgent",
+      "model_type": "minisweagent_tool.models.litellm_model.LitellmModel",
+      "environment_type": "minisweagent_tool.environments.docker.DockerEnvironment"
+    }
+  },
+  "messages": [
+    {
+      "role": "system",
+      "content": "\n## \u26a0\ufe0f Limited Context Window\n\nYour context window is limited to 8000 tokens. As the conversation grows, older messages will be dropped.\n\n**CRITICAL: Your context persists outside the conversation window. Use it!**\n\nYour TODO list, logs, and commits are stored in `.context/` and survive context truncation.\nWhen you feel lost or the conversation seems incomplete, run `context_summary` to recall your progress.\n\nYou are a helpful assistant that can interact multiple times with a computer shell to solve programming tasks.\nYour response must contain exactly ONE bash code block with ONE command (or commands connected with && or ||).\n\nInclude a THOUGHT section before your command where you explain your reasoning process.\nFormat your response as shown in <format_example>.\n\n<format_example>\nTHOUGHT: Your reasoning and analysis here\n\n```bash\nyour_command_here\n```\n</format_example>\n\nFailure to follow these rules will cause your response to be rejected.\n\n\n## Context Management - TODO-Driven Workflow\n\nYou have a persistent context system that survives conversation truncation. **Follow this workflow strictly.**\n\n### \ud83c\udfaf Task Focus & Boundaries\n\n- **Primary goal:** Fix the specific bug / implement the behavior described in the task, nothing more.\n- **Only modify code that is directly required** to satisfy the task description or PR diff.\n- **Do NOT:**\n  - Refactor unrelated modules or error messages.\n  - Chase generic test infrastructure or environment issues unless the task explicitly asks.\n  - Introduce new features beyond what the task requires.\n- **When the minimal patch is implemented and sanity-checked, STOP and submit** instead of exploring additional improvements.\n\n### \u26a1 REQUIRED Workflow\n\n**STEP 1: ANALYZE & PLAN (First thing after receiving a task)**\n**CRITICAL: Check if TODOs already exist before creating new ones!**\n\n1. **First, check existing TODOs:**\n   ```\n   context_todos\n   ```\n   If TODOs already exist, use `context_summary` to see your current progress and continue from there. **DO NOT create duplicate TODOs.**\n\n2. **Only if no TODOs exist, create a detailed TODO list:**\n   ```\n   context_todos --add \"1. Analyze the codebase: find and read relevant files\"\n   context_todos --add \"2. Create a minimal script to reproduce the issue\"\n   context_todos --add \"3. Edit source code to resolve the issue\"\n   context_todos --add \"4. Verify fix works by running the reproduction script once\"\n   context_todos --add \"5. Submit immediately if verification passes\"\n   ```\n\n**Note:** The verification script should be MINIMAL - just enough to confirm the fix works. Do NOT test extensive edge cases unless the task explicitly requires it.\n\n**STEP 2: WORK ON EACH TODO**\nFor each TODO:\n1. **After each command**, log a summary of what you learned\n2. Log your findings and decisions\n3. When done, mark complete: `context_todos --complete N` (saves progress to context)\n\n**CRITICAL: Log in a SEPARATE step AFTER seeing output.**\n\nThe `context_log` command is intercepted before bash runs, so `$(...)` and `$VAR` will NOT be expanded.\n\n\u2717 **WRONG** - bash variables won't work:\n```bash\nresult=$(grep foo file.py) && context_log \"found: $result\"  # $result is literal text!\n```\n\n\u2713 **RIGHT** - run command first, then log separately:\n```bash\n# Step N: run command and see output\ngrep -n \"__getattr__\" astropy/coordinates/*.py\n```\nThen in your NEXT response, after seeing the output:\n```bash\n# Step N+1: log with actual values you observed\ncontext_log \"grep __getattr__: sky_coordinate.py:869,898 frame.py:234\"\n```\n\n**Always use literal values you saw in the output, never bash variables or substitutions.**\n\n**STEP 3: VERIFY & SUBMIT (Critical - Do This Once, Then STOP)**\nFollowing the recommended workflow, after implementing your fix:\n1. **Run your reproduction script ONCE** to verify the fix works (this is the script you created in STEP 1)\n2. **If verification passes, IMMEDIATELY submit ONCE** - do NOT:\n   - Run the script multiple times\n   - Create additional verification scripts\n   - Run echo/printf commands to \"confirm\" completion\n   - Test extensive edge cases (unless task explicitly requires)\n   - Add extra TODOs after the fix is done\n   - Run `context_summary` or other commands after submission\n3. **Use the exact submission command from the task instructions as a STANDALONE command** (typically `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && git diff --cached`)\n\n**CRITICAL: The submission command must be run ALONE, not combined with context commands!**\n\n\u2717 **WRONG** - Don't combine submission with context commands:\n```bash\ncontext_log \"...\" && context_todos --complete 5 && echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && git diff --cached\n```\n\n\u2713 **RIGHT** - Run submission as a standalone command:\n```bash\necho COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && git diff --cached\n```\n\n**If you need to mark TODOs complete or log before submitting, do that in a SEPARATE command first, then submit in the NEXT response.**\n\n**CRITICAL: Submission is FINAL - After you see the diff output, the task is COMPLETE. DO NOT:**\n- Submit again (you already submitted!)\n- Run any more commands\n- Check context_summary\n- Add more TODOs\n- Do anything else\n\n**When verification passes, submit ONCE. After you see the diff output, STOP - the task is done.**\n\n**STEP 4: RECOVER WHEN LOST**\nIf context was truncated and you feel lost:\n```\ncontext_summary\n```\nThis shows your TODOs, milestones, and recent activity.\n\n### Commands Reference\n\n| Command | Purpose |\n|---------|---------|\n| `context_todos` | View your TODO list |\n| `context_todos --add \"task\"` | Add a TODO (be specific!) |\n| `context_todos --complete N` | Mark TODO #N done (saves to context) |\n| `context_log \"message\"` | Log a finding, decision, or observation |\n| `context_commit --message \"...\"` | Manual checkpoint at a milestone |\n| `context_summary` | **Primary recovery command** - shows progress |\n\n### What to Log (Real Values From Output)\n\n**In a SEPARATE response after seeing command output, log what you found:**\n\n| After seeing... | In NEXT response, log... |\n|-----------------|--------------------------|\n| grep output | `context_log \"grep __getattr__: sky_coordinate.py:869,898 frame.py:234\"` |\n| file content | `context_log \"sky_coordinate.py:860-920: __getattr__ catches AttributeError at 898\"` |\n| error message | `context_log \"repro.py: AttributeError 'no attr prop' at line 898\"` |\n| test results | `context_log \"test_sky_coord.py: 47 passed, 2 failed\"` |\n\n**Also log key insights:**\n- `context_log \"Root cause: __getattr__ catches property's AttributeError, re-raises with wrong attr\"`\n- `context_log \"Fix: check class descriptors first, let their errors propagate\"`\n\n**NEVER use:** `$VAR`, `$(...)`, `${...}` - these won't be expanded!\n\n### TODO Guidelines (Be Specific!)\n\n**Good TODOs:**\n- \"Create a minimal script to reproduce the bug using SkyCoord subclass example from issue\"\n- \"Find __getattr__ method in sky_coordinate.py causing AttributeError\"\n- \"Update validators in django/contrib/auth/validators.py to use \\A...\\Z\"\n- \"Verify fix by running the reproduction script once\"\n\n**Bad TODOs:**\n- \"Fix the bug\" (too vague)\n- \"Look at code\" (not actionable)\n- \"Debug\" (not specific)\n- \"Improve generic error messages in unrelated modules\"\n- \"Clean up test infrastructure not mentioned in the task\"\n\n### Example Session (Each box = one response)\n\n```\n# Response 1: ALWAYS check if TODOs exist first\ncontext_todos\n```\n\n```\n# Response 2a: If TODOs exist, use context_summary to see progress\ncontext_summary\n```\n\n```\n# Response 2b: If NO TODOs exist, create TODO list\ncontext_todos --add \"1. Reproduce bug\" && context_todos --add \"2. Locate __getattr__\" && context_todos --add \"3. Fix\" && context_todos --add \"4. Test\"\n```\n\n```\n# Response 3: Run grep (just the command, no context_log yet)\ngrep -n \"__getattr__\" astropy/coordinates/*.py\n```\n\n```\n# Response 4: AFTER seeing grep output, log what you found with actual values\ncontext_log \"grep __getattr__: sky_coordinate.py:869,898,906 frame.py:234\"\n```\n\n```\n# Response 5: Read the file\nsed -n '860,920p' astropy/coordinates/sky_coordinate.py  \n```\n\n```\n# Response 6: AFTER seeing file content, log what you learned\ncontext_log \"sky_coordinate.py:869-920: __getattr__ catches AttributeError at 898, re-raises with wrong attr\"\n```\n\n```\n# Response 7: Run repro script\npython3 repro.py\n```\n\n```\n# Response 8: AFTER seeing error, log it and mark TODO complete\ncontext_log \"repro.py: AttributeError 'no attr prop' at line 898\" && context_todos --complete 1\n```\n\n```\n# Response 9: After fix is implemented, run the reproduction script ONCE to verify\npython3 repro_script.py\n```\n\n```\n# Response 10: If verification passes, mark final TODO complete (if needed) in a separate command\ncontext_todos --complete 5\n```\n\n```\n# Response 11: Submit as a STANDALONE command (do NOT combine with context commands)\necho COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && git diff --cached\n```\n\n**After Response 11: You see the diff output. The task is COMPLETE. DO NOT run any more commands.**\n\n```\n# If context truncated BEFORE submission, recover with:\ncontext_summary\n```\n\n### Remember\n- TODOs persist across context truncation - they're your roadmap\n- **ALWAYS check `context_todos` first** - if TODOs exist, use `context_summary` to see progress. **DO NOT create duplicate TODOs.**\n- Logs are your memory - be concise but capture key details\n- Completing a TODO = automatic context checkpoint (NOT a git commit)\n- When confused, `context_summary` is your friend\n- **NEVER run `git commit` before the final submission** - it will cause your patch to be empty\n- **After verification passes, submit ONCE** - do not run confirmation loops or extra checks\n- **One verification is enough** - if it works, submit. If it fails, fix and verify once more, then submit\n- **SUBMISSION IS FINAL** - After you see the diff output from the submission command, the task is COMPLETE. **DO NOT submit again or run any more commands.**\n",
+      "timestamp": 1764752366.3277361
+    },
+    {
+      "role": "user",
+      "content": "<pr_description>\nConsider the following PR description:\nInheritDocstrings metaclass doesn't work for properties\nInside the InheritDocstrings metaclass it uses `inspect.isfunction` which returns `False` for properties.\n\n</pr_description>\n\n<instructions>\n# Task Instructions\n\n## Overview\nYou're a software engineer interacting continuously with a computer by submitting commands.\nYou'll be helping implement necessary changes to meet requirements in the PR description.\nYour task is specifically to make changes to non-test files in the current directory in order to fix the issue described in the PR description in a way that is general and consistent with the codebase.\n\nIMPORTANT: This is an interactive process where you will think and issue ONE command, see its result, then think and issue your next command.\n\nFor each response:\n1. Include a THOUGHT section explaining your reasoning and what you're trying to accomplish\n2. Provide exactly ONE bash command to execute\n\n## Important Boundaries\n- MODIFY: Regular source code files in /testbed (this is the working directory for all your subsequent commands)\n- DO NOT MODIFY: Tests, configuration files (pyproject.toml, setup.cfg, etc.)\n\n## Recommended Workflow\n1. Analyze the codebase by finding and reading relevant files\n2. Create a script to reproduce the issue\n3. Edit the source code to resolve the issue\n4. Verify your fix works by running your script again\n5. Test edge cases to ensure your fix is robust\n\n## Command Execution Rules\nYou are operating in an environment where\n1. You write a single command\n2. The system executes that command in a subshell\n3. You see the result\n4. You write your next command\n\nEach response should include:\n1. A **THOUGHT** section where you explain your reasoning and plan\n2. A single bash code block with your command\n\nFormat your responses like this:\n\n<format_example>\nTHOUGHT: Here I explain my reasoning process, analysis of the current situation,\nand what I'm trying to accomplish with the command below.\n\n```bash\nyour_command_here\n```\n</format_example>\n\nCommands must be specified in a single bash code block:\n\n```bash\nyour_command_here\n```\n\n**CRITICAL REQUIREMENTS:**\n- Your response SHOULD include a THOUGHT section explaining your reasoning\n- Your response MUST include EXACTLY ONE bash code block\n- This bash block MUST contain EXACTLY ONE command (or a set of commands connected with && or ||)\n- If you include zero or multiple bash blocks, or no command at all, YOUR RESPONSE WILL FAIL\n- Do NOT try to run multiple independent commands in separate blocks in one response\n- Directory or environment variable changes are not persistent. Every action is executed in a new subshell.\n- However, you can prefix any action with `MY_ENV_VAR=MY_VALUE cd /path/to/working/dir && ...` or write/load environment variables from files\n\nExample of a CORRECT response:\n<example_response>\nTHOUGHT: I need to understand the structure of the repository first. Let me check what files are in the current directory to get a better understanding of the codebase.\n\n```bash\nls -la\n```\n</example_response>\n\nExample of an INCORRECT response:\n<example_response>\nTHOUGHT: I need to examine the codebase and then look at a specific file. I'll run multiple commands to do this.\n\n```bash\nls -la\n```\n\nNow I'll read the file:\n\n```bash\ncat file.txt\n```\n</example_response>\n\nIf you need to run multiple commands, either:\n1. Combine them in one block using && or ||\n```bash\ncommand1 && command2 || echo \"Error occurred\"\n```\n\n2. Wait for the first command to complete, see its output, then issue the next command in your following response.\n\n## Environment Details\n- You have a full Linux shell environment\n- Always use non-interactive flags (-y, -f) for commands\n- Avoid interactive tools like vi, nano, or any that require user input\n- If a command isn't available, you can install it\n\n## Useful Command Examples\n\n### Create a new file:\n```bash\ncat <<'EOF' > newfile.py\nimport numpy as np\nhello = \"world\"\nprint(hello)\nEOF\n```\n\n### Edit files with sed:\n```bash\n# Replace all occurrences\nsed -i 's/old_string/new_string/g' filename.py\n\n# Replace only first occurrence\nsed -i 's/old_string/new_string/' filename.py\n\n# Replace first occurrence on line 1\nsed -i '1s/old_string/new_string/' filename.py\n\n# Replace all occurrences in lines 1-10\nsed -i '1,10s/old_string/new_string/g' filename.py\n```\n\n### View file content:\n```bash\n# View specific lines with numbers\nnl -ba filename.py | sed -n '10,20p'\n```\n\n### Any other command you want to run\n```bash\nanything\n```\n\n## Submission\nWhen you've completed your work (reading, editing, testing), and cannot make further progress\nissue exactly the following command:\n\n```bash\necho COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && git diff --cached\n```\n\nThis command will submit your work.\nYou cannot continue working (reading, editing, testing) in any way on this task after submitting.\n</instructions>",
+      "timestamp": 1764752366.329086
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: I need to see the repository contents to find the InheritDocstrings implementation and relevant files under the testbed directory so I can locate and modify the code that handles docstring inheritance for properties. I'll list files in the current directory.\n\n```bash\nls -la\n```",
+      "timestamp": 1764752370.883019,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-CiczmYYq2CTN2TyQx1xC9VskTj97i",
+          "created": 1764752366,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: I need to see the repository contents to find the InheritDocstrings implementation and relevant files under the testbed directory so I can locate and modify the code that handles docstring inheritance for properties. I'll list files in the current directory.\n\n```bash\nls -la\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 260,
+            "prompt_tokens": 3550,
+            "total_tokens": 3810,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 192,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 1792,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\ntotal 500\ndrwxrwxrwx  1 root root   4096 Sep 10 09:34 .\ndrwxr-xr-x  1 root root   4096 Dec  3 08:59 ..\n-rw-r--r--  1 root root      0 Sep 10 09:33 .astropy-root\ndrwxrwxrwx  2 root root   4096 Sep 10 09:33 .circleci\ndrwxrwxrwx  9 root root   4096 Sep 10 09:36 .git\n-rw-r--r--  1 root root     73 Sep 10 09:33 .gitattributes\n-rw-r--r--  1 root root    766 Sep 10 09:33 .gitignore\n-rw-r--r--  1 root root    108 Sep 10 09:33 .gitmodules\n-rw-r--r--  1 root root   7645 Sep 10 09:33 .mailmap\n-rw-r--r--  1 root root    646 Sep 10 09:33 .rtd-environment.yml\n-rw-r--r--  1 root root   7548 Sep 10 09:33 .travis.yml\n-rw-r--r--  1 root root 300394 Sep 10 09:33 CHANGES.rst\n-rw-r--r--  1 root root   1973 Sep 10 09:33 CITATION\n-rw-r--r--  1 root root     96 Sep 10 09:33 CODE_OF_CONDUCT.md\n-rw-r--r--  1 root root   6401 Sep 10 09:33 CONTRIBUTING.md\n-rw-r--r--  1 root root   1496 Sep 10 09:33 LICENSE.rst\n-rw-r--r--  1 root root   1627 Sep 10 09:33 MANIFEST.in\n-rw-r--r--  1 root root   2507 Sep 10 09:33 README.rst\ndrwxr-xr-x  2 root root   4096 Sep 10 09:34 __pycache__\n-rw-r--r--  1 root root  35725 Sep 10 09:33 ah_bootstrap.py\n-rw-r--r--  1 root root   1117 Sep 10 09:33 appveyor.yml\ndrwxrwxrwx 22 root root   4096 Sep 10 09:36 astropy\ndrwxr-xr-x  2 root root   4096 Sep 10 09:34 astropy.egg-info\ndrwxr-xr-x  6 root root   4096 Sep 10 09:34 astropy_helpers\ndrwxr-xr-x  3 root root   4096 Sep 10 09:34 build\ndrwxrwxrwx  6 root root   4096 Sep 10 09:33 cextern\n-rw-r--r--  1 root root    159 Sep 10 09:33 conftest.py\ndrwxrwxrwx 21 root root   4096 Sep 10 09:33 docs\ndrwxr-xr-x  5 root root   4096 Sep 10 09:33 examples\n-rw-r--r--  1 root root  12537 Sep 10 09:33 ez_setup.py\ndrwxrwxrwx  2 root root   4096 Sep 10 09:33 licenses\n-rw-r--r--  1 root root     26 Sep 10 09:33 pip-requirements\n-rw-r--r--  1 root root    234 Sep 10 09:33 pip-requirements-dev\n-rw-r--r--  1 root root     67 Sep 10 09:33 pip-requirements-doc\n-rw-r--r--  1 root root     89 Sep 10 09:33 readthedocs.yml\n-rw-r--r--  1 root root    742 Sep 10 09:33 setup.cfg\n-rwxr-xr-x  1 root root   4268 Sep 10 09:33 setup.py\ndrwxr-xr-x  2 root root   4096 Sep 10 09:33 static\n</output>",
+      "timestamp": 1764752374.923811
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: I will search the repository for \"InheritDocstrings\" to find the metaclass implementation so I can inspect how it handles functions vs properties.\n\n```bash\ngrep -nR \"InheritDocstrings\" -n .\n```",
+      "timestamp": 1764752377.345226,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-Ciczvahgf4gIHqMpFIWJHfw5lvnJo",
+          "created": 1764752375,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: I will search the repository for \"InheritDocstrings\" to find the metaclass implementation so I can inspect how it handles functions vs properties.\n\n```bash\ngrep -nR \"InheritDocstrings\" -n .\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 59,
+            "prompt_tokens": 4610,
+            "total_tokens": 4669,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 0,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 1792,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\ngrep: ./.git/objects/pack/pack-5bd956a55974ad51e05a90555555f105be76d3b7.pack: binary file matches\ngrep: ./astropy/utils/__pycache__/misc.cpython-36.pyc: binary file matches\n./astropy/coordinates/representation.py:24:from ..utils.misc import InheritDocstrings\n./astropy/coordinates/representation.py:427:class MetaBaseRepresentation(InheritDocstrings, abc.ABCMeta):\n./astropy/coordinates/representation.py:1934:class MetaBaseDifferential(InheritDocstrings, abc.ABCMeta):\n./astropy/visualization/stretch.py:11:from ..utils.misc import InheritDocstrings\n./astropy/visualization/stretch.py:47:class BaseStretch(BaseTransform, metaclass=InheritDocstrings):\n./astropy/visualization/interval.py:12:from ..utils.misc import InheritDocstrings\n./astropy/visualization/interval.py:21:class BaseInterval(BaseTransform, metaclass=InheritDocstrings):\n./astropy/modeling/core.py:39:                     InheritDocstrings, OrderedDescriptorContainer,\n./astropy/modeling/core.py:78:class _ModelMeta(OrderedDescriptorContainer, InheritDocstrings, abc.ABCMeta):\n./astropy/io/votable/tree.py:24:from ...utils.misc import InheritDocstrings\n./astropy/io/votable/tree.py:406:class Element(metaclass=InheritDocstrings):\n./astropy/utils/tests/test_misc.py:78:    class Base(metaclass=misc.InheritDocstrings):\n./astropy/utils/misc.py:33:           'JsonCustomEncoder', 'indent', 'InheritDocstrings',\n./astropy/utils/misc.py:497:class InheritDocstrings(type):\n./astropy/utils/misc.py:511:        >>> from astropy.utils.misc import InheritDocstrings\n./astropy/utils/misc.py:512:        >>> class A(metaclass=InheritDocstrings):\ngrep: ./astropy/config/__pycache__/configuration.cpython-36.pyc: binary file matches\n./astropy/config/configuration.py:23:from ..utils.misc import InheritDocstrings\n./astropy/config/configuration.py:160:class ConfigItem(metaclass=InheritDocstrings):\ngrep: ./astropy/constants/__pycache__/constant.cpython-36.pyc: binary file matches\n./astropy/constants/constant.py:12:from ..utils.misc import InheritDocstrings\n./astropy/constants/constant.py:17:class ConstantMeta(InheritDocstrings):\n./astropy/units/quantity.py:26:from ..utils.misc import isiterable, InheritDocstrings\n./astropy/units/quantity.py:200:class Quantity(np.ndarray, metaclass=InheritDocstrings):\n./astropy/units/format/base.py:2:from ...utils.misc import InheritDocstrings\n./astropy/units/format/base.py:5:class _FormatterMeta(InheritDocstrings):\ngrep: ./astropy/units/format/__pycache__/base.cpython-36.pyc: binary file matches\n./astropy/units/core.py:18:from ..utils.misc import isiterable, InheritDocstrings\n./astropy/units/core.py:486:class UnitBase(metaclass=InheritDocstrings):\n./astropy/units/core.py:1730:class _UnitMetaClass(InheritDocstrings):\ngrep: ./astropy/units/__pycache__/quantity.cpython-36.pyc: binary file matches\ngrep: ./astropy/units/__pycache__/core.cpython-36.pyc: binary file matches\n</output>",
+      "timestamp": 1764752396.042364
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: Per the required workflow I should check for existing TODOs in the persistent context before creating new ones. I'll run context_todos to see if any tasks already exist.\n\n```bash\ncontext_todos\n```",
+      "timestamp": 1764752400.517222,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-Cid0G58SP5QfISKjiDajGmKUa3hOv",
+          "created": 1764752396,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: Per the required workflow I should check for existing TODOs in the persistent context before creating new ones. I'll run context_todos to see if any tasks already exist.\n\n```bash\ncontext_todos\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 246,
+            "prompt_tokens": 5474,
+            "total_tokens": 5720,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 192,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 1792,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\n## Current TODOs\n\n  1. [ ] Reproduce the bug with a minimal test case\n  2. [ ] Find the function causing the error (look in X module)\n  3. [ ] Understand why Y happens when Z is called\n  4. [ ] Implement fix by changing A to B\n  5. [ ] Test the fix with the original reproduction case</output>",
+      "timestamp": 1764752400.5484512
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: TODOs already exist in the persistent context. According to the workflow, I should inspect the context summary to see current progress and any logs before proceeding to edit code.\n\n```bash\ncontext_summary\n```",
+      "timestamp": 1764752402.563448,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-Cid0KQJ7dpEn3KtOlILFVpx8EPLzq",
+          "created": 1764752400,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: TODOs already exist in the persistent context. According to the workflow, I should inspect the context summary to see current progress and any logs before proceeding to edit code.\n\n```bash\ncontext_summary\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 117,
+            "prompt_tokens": 5626,
+            "total_tokens": 5743,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 64,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 4480,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\n# Context Recovery - swebench-astropy__astropy-7166\n\n**Task:** InheritDocstrings metaclass doesn't work for properties\n\n## TODOs\n**Pending (5):**\n  1. Reproduce the bug with a minimal test case\n  2. Find the function causing the error (look in X module)\n  3. Understand why Y happens when Z is called\n  4. Implement fix by changing A to B\n  5. Test the fix with the original reproduction case\n\n## Recent Activity (3 entries)\n**Recent Actions:**\n  \u2022 ls -la\n  \u2022 grep -nR \"InheritDocstrings\" -n .\n\n_Use `context_info --level session` for full log history._</output>",
+      "timestamp": 1764752402.670767
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: I need to inspect the InheritDocstrings metaclass implementation to see how it detects functions and why it fails for properties. I'll open the portion of astropy/utils/misc.py that contains the class definition and its relevant methods so I can plan a fix.\n\n```bash\nnl -ba astropy/utils/misc.py | sed -n '480,620p'\n```",
+      "timestamp": 1764752406.221654,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-Cid0MMNHbhgijCNE7GKTw8LL4HqPQ",
+          "created": 1764752402,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: I need to inspect the InheritDocstrings metaclass implementation to see how it detects functions and why it fails for properties. I'll open the portion of astropy/utils/misc.py that contains the class definition and its relevant methods so I can plan a fix.\n\n```bash\nnl -ba astropy/utils/misc.py | sed -n '480,620p'\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 216,
+            "prompt_tokens": 5850,
+            "total_tokens": 6066,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 128,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 4992,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\n   480\t            for match in matches:\n   481\t                mapped_matches.extend(fix(match))\n   482\t            matches = mapped_matches\n   483\t\n   484\t        matches = list(set(matches))\n   485\t        matches = sorted(matches)\n   486\t\n   487\t        if len(matches) == 1:\n   488\t            matches = matches[0]\n   489\t        else:\n   490\t            matches = (', '.join(matches[:-1]) + ' or ' +\n   491\t                       matches[-1])\n   492\t        return 'Did you mean {0}?'.format(matches)\n   493\t\n   494\t    return ''\n   495\t\n   496\t\n   497\tclass InheritDocstrings(type):\n   498\t    \"\"\"\n   499\t    This metaclass makes methods of a class automatically have their\n   500\t    docstrings filled in from the methods they override in the base\n   501\t    class.\n   502\t\n   503\t    If the class uses multiple inheritance, the docstring will be\n   504\t    chosen from the first class in the bases list, in the same way as\n   505\t    methods are normally resolved in Python.  If this results in\n   506\t    selecting the wrong docstring, the docstring will need to be\n   507\t    explicitly included on the method.\n   508\t\n   509\t    For example::\n   510\t\n   511\t        >>> from astropy.utils.misc import InheritDocstrings\n   512\t        >>> class A(metaclass=InheritDocstrings):\n   513\t        ...     def wiggle(self):\n   514\t        ...         \"Wiggle the thingamajig\"\n   515\t        ...         pass\n   516\t        >>> class B(A):\n   517\t        ...     def wiggle(self):\n   518\t        ...         pass\n   519\t        >>> B.wiggle.__doc__\n   520\t        u'Wiggle the thingamajig'\n   521\t    \"\"\"\n   522\t\n   523\t    def __init__(cls, name, bases, dct):\n   524\t        def is_public_member(key):\n   525\t            return (\n   526\t                (key.startswith('__') and key.endswith('__')\n   527\t                 and len(key) > 4) or\n   528\t                not key.startswith('_'))\n   529\t\n   530\t        for key, val in dct.items():\n   531\t            if (inspect.isfunction(val) and\n   532\t                is_public_member(key) and\n   533\t                val.__doc__ is None):\n   534\t                for base in cls.__mro__[1:]:\n   535\t                    super_method = getattr(base, key, None)\n   536\t                    if super_method is not None:\n   537\t                        val.__doc__ = super_method.__doc__\n   538\t                        break\n   539\t\n   540\t        super().__init__(name, bases, dct)\n   541\t\n   542\t\n   543\tclass OrderedDescriptor(metaclass=abc.ABCMeta):\n   544\t    \"\"\"\n   545\t    Base class for descriptors whose order in the class body should be\n   546\t    preserved.  Intended for use in concert with the\n   547\t    `OrderedDescriptorContainer` metaclass.\n   548\t\n   549\t    Subclasses of `OrderedDescriptor` must define a value for a class attribute\n   550\t    called ``_class_attribute_``.  This is the name of a class attribute on the\n   551\t    *container* class for these descriptors, which will be set to an\n   552\t    `~collections.OrderedDict` at class creation time.  This\n   553\t    `~collections.OrderedDict` will contain a mapping of all class attributes\n   554\t    that were assigned instances of the `OrderedDescriptor` subclass, to the\n   555\t    instances themselves.  See the documentation for\n   556\t    `OrderedDescriptorContainer` for a concrete example.\n   557\t\n   558\t    Optionally, subclasses of `OrderedDescriptor` may define a value for a\n   559\t    class attribute called ``_name_attribute_``.  This should be the name of\n   560\t    an attribute on instances of the subclass.  When specified, during\n   561\t    creation of a class containing these descriptors, the name attribute on\n   562\t    each instance will be set to the name of the class attribute it was\n   563\t    assigned to on the class.\n   564\t\n   565\t    .. note::\n   566\t\n   567\t        Although this class is intended for use with *descriptors* (i.e.\n   568\t        classes that define any of the ``__get__``, ``__set__``, or\n   569\t        ``__delete__`` magic methods), this base class is not itself a\n   570\t        descriptor, and technically this could be used for classes that are\n   571\t        not descriptors too.  However, use with descriptors is the original\n   572\t        intended purpose.\n   573\t    \"\"\"\n   574\t\n   575\t    # This id increments for each OrderedDescriptor instance created, so they\n   576\t    # are always ordered in the order they were created.  Class bodies are\n   577\t    # guaranteed to be executed from top to bottom.  Not sure if this is\n   578\t    # thread-safe though.\n   579\t    _nextid = 1\n   580\t\n   581\t    @property\n   582\t    @abc.abstractmethod\n   583\t    def _class_attribute_(self):\n   584\t        \"\"\"\n   585\t        Subclasses should define this attribute to the name of an attribute on\n   586\t        classes containing this subclass.  That attribute will contain the mapping\n   587\t        of all instances of that `OrderedDescriptor` subclass defined in the class\n   588\t        body.  If the same descriptor needs to be used with different classes,\n   589\t        each with different names of this attribute, multiple subclasses will be\n   590\t        needed.\n   591\t        \"\"\"\n   592\t\n   593\t    _name_attribute_ = None\n   594\t    \"\"\"\n   595\t    Subclasses may optionally define this attribute to specify the name of an\n   596\t    attribute on instances of the class that should be filled with the\n   597\t    instance's attribute name at class creation time.\n   598\t    \"\"\"\n   599\t\n   600\t    def __init__(self, *args, **kwargs):\n   601\t        # The _nextid attribute is shared across all subclasses so that\n   602\t        # different subclasses of OrderedDescriptors can be sorted correctly\n   603\t        # between themselves\n   604\t        self.__order = OrderedDescriptor._nextid\n   605\t        OrderedDescriptor._nextid += 1\n   606\t        super().__init__()\n   607\t\n   608\t    def __lt__(self, other):\n   609\t        \"\"\"\n   610\t        Defined for convenient sorting of `OrderedDescriptor` instances, which\n   611\t        are defined to sort in their creation order.\n   612\t        \"\"\"\n   613\t\n   614\t        if (isinstance(self, OrderedDescriptor) and\n   615\t                isinstance(other, OrderedDescriptor)):\n   616\t            try:\n   617\t                return self.__order < other.__order\n   618\t            except AttributeError:\n   619\t                raise RuntimeError(\n   620\t                    'Could not determine ordering for {0} and {1}; at least '\n</output>",
+      "timestamp": 1764752409.099756
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: I will modify astropy/utils/misc.py to make InheritDocstrings handle properties, classmethods, and staticmethods in addition to plain functions. I'll replace the existing loop that only checks inspect.isfunction with logic that detects the underlying callable for these descriptors, copies the docstring from the first base that provides it, and assigns it to the underlying function (e.g., fget for property or __func__ for classmethod/staticmethod). I'll perform an in-place edit using a small Python script to rewrite that block safely.\n\n```bash\npython3 - <<'PY'\nfrom pathlib import Path\np = Path('astropy/utils/misc.py')\ns = p.read_text()\nstart_marker = \"for key, val in dct.items():\"\nsi = s.find(start_marker)\nif si == -1:\n    raise SystemExit(\"start marker not found\")\n# find the position of the next line that calls super().__init__(name, bases, dct)\nend_marker = \"super().__init__(name, bases, dct)\"\nei = s.find(end_marker, si)\nif ei == -1:\n    raise SystemExit(\"end marker not found\")\n# we'll replace the block from start_marker up to the line before super().__init__\npre = s[:si]\npost = s[ei:]\nnew_block = (\n    \"for key, val in dct.items():\\n\"\n    \"            if is_public_member(key):\\n\"\n    \"                # Support plain functions, and descriptors that wrap\\n\"\n    \"                # functions: classmethod, staticmethod, and property.\\n\"\n    \"                # Determine the underlying function (target) whose\\n\"\n    \"                # __doc__ should be set.\\n\"\n    \"                target = None\\n\"\n    \"                if inspect.isfunction(val):\\n\"\n    \"                    target = val\\n\"\n    \"                elif isinstance(val, (classmethod, staticmethod)):\\n\"\n    \"                    target = getattr(val, '__func__', None)\\n\"\n    \"                elif isinstance(val, property):\\n\"\n    \"                    target = getattr(val, 'fget', None)\\n\"\n    \"                # If we don't have a target function, skip\\n\"\n    \"                if target is None:\\n\"\n    \"                    continue\\n\"\n    \"                # Only try to inherit if the target has no docstring\\n\"\n    \"                if getattr(target, '__doc__', None) is not None:\\n\"\n    \"                    continue\\n\"\n    \"                for base in cls.__mro__[1:]:\\n\"\n    \"                    super_method = getattr(base, key, None)\\n\"\n    \"                    if super_method is not None:\\n\"\n    \"                        # Extract the source docstring from the base\\n\"\n    \"                        if isinstance(super_method, (classmethod, staticmethod)):\\n\"\n    \"                            source = getattr(getattr(super_method, '__func__', None), '__doc__', None)\\n\"\n    \"                        elif isinstance(super_method, property):\\n\"\n    \"                            source = getattr(getattr(super_method, 'fget', None), '__doc__', None)\\n\"\n    \"                        else:\\n\"\n    \"                            source = getattr(super_method, '__doc__', None)\\n\"\n    \"                        if source:\\n\"\n    \"                            # Assign the inherited docstring to the target function\\n\"\n    \"                            try:\\n\"\n    \"                                target.__doc__ = source\\n\"\n    \"                            except Exception:\\n\"\n    \"                                # Be conservative: if assignment fails, ignore\\n\"\n    \"                                pass\\n\"\n    \"                            break\\n\"\n)\nnew_text = pre + new_block + post\np.write_text(new_text)\nprint('patched')\nPY\n```",
+      "timestamp": 1764752448.8181021,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-Cid0TS4PrvA3pc2pVx2d9bjIb2aWN",
+          "created": 1764752409,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: I will modify astropy/utils/misc.py to make InheritDocstrings handle properties, classmethods, and staticmethods in addition to plain functions. I'll replace the existing loop that only checks inspect.isfunction with logic that detects the underlying callable for these descriptors, copies the docstring from the first base that provides it, and assigns it to the underlying function (e.g., fget for property or __func__ for classmethod/staticmethod). I'll perform an in-place edit using a small Python script to rewrite that block safely.\n\n```bash\npython3 - <<'PY'\nfrom pathlib import Path\np = Path('astropy/utils/misc.py')\ns = p.read_text()\nstart_marker = \"for key, val in dct.items():\"\nsi = s.find(start_marker)\nif si == -1:\n    raise SystemExit(\"start marker not found\")\n# find the position of the next line that calls super().__init__(name, bases, dct)\nend_marker = \"super().__init__(name, bases, dct)\"\nei = s.find(end_marker, si)\nif ei == -1:\n    raise SystemExit(\"end marker not found\")\n# we'll replace the block from start_marker up to the line before super().__init__\npre = s[:si]\npost = s[ei:]\nnew_block = (\n    \"for key, val in dct.items():\\n\"\n    \"            if is_public_member(key):\\n\"\n    \"                # Support plain functions, and descriptors that wrap\\n\"\n    \"                # functions: classmethod, staticmethod, and property.\\n\"\n    \"                # Determine the underlying function (target) whose\\n\"\n    \"                # __doc__ should be set.\\n\"\n    \"                target = None\\n\"\n    \"                if inspect.isfunction(val):\\n\"\n    \"                    target = val\\n\"\n    \"                elif isinstance(val, (classmethod, staticmethod)):\\n\"\n    \"                    target = getattr(val, '__func__', None)\\n\"\n    \"                elif isinstance(val, property):\\n\"\n    \"                    target = getattr(val, 'fget', None)\\n\"\n    \"                # If we don't have a target function, skip\\n\"\n    \"                if target is None:\\n\"\n    \"                    continue\\n\"\n    \"                # Only try to inherit if the target has no docstring\\n\"\n    \"                if getattr(target, '__doc__', None) is not None:\\n\"\n    \"                    continue\\n\"\n    \"                for base in cls.__mro__[1:]:\\n\"\n    \"                    super_method = getattr(base, key, None)\\n\"\n    \"                    if super_method is not None:\\n\"\n    \"                        # Extract the source docstring from the base\\n\"\n    \"                        if isinstance(super_method, (classmethod, staticmethod)):\\n\"\n    \"                            source = getattr(getattr(super_method, '__func__', None), '__doc__', None)\\n\"\n    \"                        elif isinstance(super_method, property):\\n\"\n    \"                            source = getattr(getattr(super_method, 'fget', None), '__doc__', None)\\n\"\n    \"                        else:\\n\"\n    \"                            source = getattr(super_method, '__doc__', None)\\n\"\n    \"                        if source:\\n\"\n    \"                            # Assign the inherited docstring to the target function\\n\"\n    \"                            try:\\n\"\n    \"                                target.__doc__ = source\\n\"\n    \"                            except Exception:\\n\"\n    \"                                # Be conservative: if assignment fails, ignore\\n\"\n    \"                                pass\\n\"\n    \"                            break\\n\"\n)\nnew_text = pre + new_block + post\np.write_text(new_text)\nprint('patched')\nPY\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 3092,
+            "prompt_tokens": 7576,
+            "total_tokens": 10668,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 2304,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 5760,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>1</returncode>\n<output>\nTraceback (most recent call last):\n  File \"<stdin>\", line 3, in <module>\n  File \"/opt/miniconda3/envs/testbed/lib/python3.6/pathlib.py\", line 1197, in read_text\n    return f.read()\n  File \"/opt/miniconda3/envs/testbed/lib/python3.6/encodings/ascii.py\", line 26, in decode\n    return codecs.ascii_decode(input, self.errors)[0]\nUnicodeDecodeError: 'ascii' codec can't decode byte 0xc3 in position 12028: ordinal not in range(128)\n</output>",
+      "timestamp": 1764752451.9949389
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: The previous attempt failed because the file contains non-ASCII characters and was read with the default ASCII codec. I'll re-run the patch script but explicitly read and write the file using UTF-8 encoding so the replacement succeeds.\n\n```bash\npython3 - <<'PY'\nfrom pathlib import Path\np = Path('astropy/utils/misc.py')\ns = p.read_text(encoding='utf-8')\nstart_marker = \"for key, val in dct.items():\"\nsi = s.find(start_marker)\nif si == -1:\n    raise SystemExit(\"start marker not found\")\nend_marker = \"super().__init__(name, bases, dct)\"\nei = s.find(end_marker, si)\nif ei == -1:\n    raise SystemExit(\"end marker not found\")\npre = s[:si]\npost = s[ei:]\nnew_block = (\n    \"for key, val in dct.items():\\n\"\n    \"            if is_public_member(key):\\n\"\n    \"                # Support plain functions, and descriptors that wrap\\n\"\n    \"                # functions: classmethod, staticmethod, and property.\\n\"\n    \"                # Determine the underlying function (target) whose\\n\"\n    \"                # __doc__ should be set.\\n\"\n    \"                target = None\\n\"\n    \"                if inspect.isfunction(val):\\n\"\n    \"                    target = val\\n\"\n    \"                elif isinstance(val, (classmethod, staticmethod)):\\n\"\n    \"                    target = getattr(val, '__func__', None)\\n\"\n    \"                elif isinstance(val, property):\\n\"\n    \"                    target = getattr(val, 'fget', None)\\n\"\n    \"                # If we don't have a target function, skip\\n\"\n    \"                if target is None:\\n\"\n    \"                    continue\\n\"\n    \"                # Only try to inherit if the target has no docstring\\n\"\n    \"                if getattr(target, '__doc__', None) is not None:\\n\"\n    \"                    continue\\n\"\n    \"                for base in cls.__mro__[1:]:\\n\"\n    \"                    super_method = getattr(base, key, None)\\n\"\n    \"                    if super_method is not None:\\n\"\n    \"                        # Extract the source docstring from the base\\n\"\n    \"                        if isinstance(super_method, (classmethod, staticmethod)):\\n\"\n    \"                            source = getattr(getattr(super_method, '__func__', None), '__doc__', None)\\n\"\n    \"                        elif isinstance(super_method, property):\\n\"\n    \"                            source = getattr(getattr(super_method, 'fget', None), '__doc__', None)\\n\"\n    \"                        else:\\n\"\n    \"                            source = getattr(super_method, '__doc__', None)\\n\"\n    \"                        if source:\\n\"\n    \"                            # Assign the inherited docstring to the target function\\n\"\n    \"                            try:\\n\"\n    \"                                target.__doc__ = source\\n\"\n    \"                            except Exception:\\n\"\n    \"                                # Be conservative: if assignment fails, ignore\\n\"\n    \"                                pass\\n\"\n    \"                            break\\n\"\n)\nnew_text = pre + new_block + post\np.write_text(new_text, encoding='utf-8')\nprint('patched')\nPY\n```",
+      "timestamp": 1764752467.051171,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-Cid1Aem8prvPpbH0EwRfYS0oSHteR",
+          "created": 1764752452,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: The previous attempt failed because the file contains non-ASCII characters and was read with the default ASCII codec. I'll re-run the patch script but explicitly read and write the file using UTF-8 encoding so the replacement succeeds.\n\n```bash\npython3 - <<'PY'\nfrom pathlib import Path\np = Path('astropy/utils/misc.py')\ns = p.read_text(encoding='utf-8')\nstart_marker = \"for key, val in dct.items():\"\nsi = s.find(start_marker)\nif si == -1:\n    raise SystemExit(\"start marker not found\")\nend_marker = \"super().__init__(name, bases, dct)\"\nei = s.find(end_marker, si)\nif ei == -1:\n    raise SystemExit(\"end marker not found\")\npre = s[:si]\npost = s[ei:]\nnew_block = (\n    \"for key, val in dct.items():\\n\"\n    \"            if is_public_member(key):\\n\"\n    \"                # Support plain functions, and descriptors that wrap\\n\"\n    \"                # functions: classmethod, staticmethod, and property.\\n\"\n    \"                # Determine the underlying function (target) whose\\n\"\n    \"                # __doc__ should be set.\\n\"\n    \"                target = None\\n\"\n    \"                if inspect.isfunction(val):\\n\"\n    \"                    target = val\\n\"\n    \"                elif isinstance(val, (classmethod, staticmethod)):\\n\"\n    \"                    target = getattr(val, '__func__', None)\\n\"\n    \"                elif isinstance(val, property):\\n\"\n    \"                    target = getattr(val, 'fget', None)\\n\"\n    \"                # If we don't have a target function, skip\\n\"\n    \"                if target is None:\\n\"\n    \"                    continue\\n\"\n    \"                # Only try to inherit if the target has no docstring\\n\"\n    \"                if getattr(target, '__doc__', None) is not None:\\n\"\n    \"                    continue\\n\"\n    \"                for base in cls.__mro__[1:]:\\n\"\n    \"                    super_method = getattr(base, key, None)\\n\"\n    \"                    if super_method is not None:\\n\"\n    \"                        # Extract the source docstring from the base\\n\"\n    \"                        if isinstance(super_method, (classmethod, staticmethod)):\\n\"\n    \"                            source = getattr(getattr(super_method, '__func__', None), '__doc__', None)\\n\"\n    \"                        elif isinstance(super_method, property):\\n\"\n    \"                            source = getattr(getattr(super_method, 'fget', None), '__doc__', None)\\n\"\n    \"                        else:\\n\"\n    \"                            source = getattr(super_method, '__doc__', None)\\n\"\n    \"                        if source:\\n\"\n    \"                            # Assign the inherited docstring to the target function\\n\"\n    \"                            try:\\n\"\n    \"                                target.__doc__ = source\\n\"\n    \"                            except Exception:\\n\"\n    \"                                # Be conservative: if assignment fails, ignore\\n\"\n    \"                                pass\\n\"\n    \"                            break\\n\"\n)\nnew_text = pre + new_block + post\np.write_text(new_text, encoding='utf-8')\nprint('patched')\nPY\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 1212,
+            "prompt_tokens": 7392,
+            "total_tokens": 8604,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 512,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 1792,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\npatched\n</output>",
+      "timestamp": 1764752470.823352
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: I updated astropy/utils/misc.py to make InheritDocstrings handle properties, classmethods, and staticmethods by assigning the base method's docstring to the underlying function (fget or __func__). Now I will log that the patch succeeded (the script printed \"patched\") and mark TODO #4 (implement fix) complete.\n\n```bash\ncontext_log \"patched: updated astropy/utils/misc.py InheritDocstrings to set __doc__ on underlying functions for property/classmethod/staticmethod; script output: patched\" && context_todos --complete 4\n```",
+      "timestamp": 1764752481.647299,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-Cid1TmfBHWUxPWAl6TnhEyYCA12iS",
+          "created": 1764752471,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: I updated astropy/utils/misc.py to make InheritDocstrings handle properties, classmethods, and staticmethods by assigning the base method's docstring to the underlying function (fget or __func__). Now I will log that the patch succeeded (the script printed \"patched\") and mark TODO #4 (implement fix) complete.\n\n```bash\ncontext_log \"patched: updated astropy/utils/misc.py InheritDocstrings to set __doc__ on underlying functions for property/classmethod/staticmethod; script output: patched\" && context_todos --complete 4\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 834,
+            "prompt_tokens": 7050,
+            "total_tokens": 7884,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 704,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 1792,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\n\u2713 Logged to context\n\u2713 Completed TODO #4: Implement fix by changing A to B</output>",
+      "timestamp": 1764752481.684841
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: I'll run a minimal reproduction script that defines a base class with a property that has a docstring and a subclass (using the InheritDocstrings metaclass) that defines the same property without a docstring. The script will print the property's fget.__doc__ and the property's __doc__ on the subclass to confirm the docstring was inherited.\n\n```bash\ncat > repro_inheritdoc.py <<'PY'\nfrom astropy.utils.misc import InheritDocstrings\n\nclass A(metaclass=InheritDocstrings):\n    @property\n    def foo(self):\n        \"Base property docstring\"\n        return 1\n\nclass B(A):\n    @property\n    def foo(self):\n        return 2\n\nprint(\"B.foo.fget.__doc__:\", repr(B.foo.fget.__doc__))\nprint(\"B.foo.__doc__:\", repr(B.foo.__doc__))\nPY\npython3 repro_inheritdoc.py\n```",
+      "timestamp": 1764752494.80376,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-Cid1dD0YqvrIYKiGdcBb1yEWuIYiF",
+          "created": 1764752481,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: I'll run a minimal reproduction script that defines a base class with a property that has a docstring and a subclass (using the InheritDocstrings metaclass) that defines the same property without a docstring. The script will print the property's fget.__doc__ and the property's __doc__ on the subclass to confirm the docstring was inherited.\n\n```bash\ncat > repro_inheritdoc.py <<'PY'\nfrom astropy.utils.misc import InheritDocstrings\n\nclass A(metaclass=InheritDocstrings):\n    @property\n    def foo(self):\n        \"Base property docstring\"\n        return 1\n\nclass B(A):\n    @property\n    def foo(self):\n        return 2\n\nprint(\"B.foo.fget.__doc__:\", repr(B.foo.fget.__doc__))\nprint(\"B.foo.__doc__:\", repr(B.foo.__doc__))\nPY\npython3 repro_inheritdoc.py\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 1033,
+            "prompt_tokens": 7214,
+            "total_tokens": 8247,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 832,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 6912,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>1</returncode>\n<output>\nTraceback (most recent call last):\n  File \"repro_inheritdoc.py\", line 1, in <module>\n    from astropy.utils.misc import InheritDocstrings\n  File \"/testbed/astropy/__init__.py\", line 116, in <module>\n    _check_numpy()\n  File \"/testbed/astropy/__init__.py\", line 104, in _check_numpy\n    from .utils import minversion\n  File \"/testbed/astropy/utils/__init__.py\", line 16, in <module>\n    from .misc import *\n  File \"/testbed/astropy/utils/misc.py\", line 567, in <module>\n    super().__init__(name, bases, dct)\nRuntimeError: super(): no arguments\n</output>",
+      "timestamp": 1764752501.909787
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: The RuntimeError \"super(): no arguments\" indicates the super().__init__(name, bases, dct) call is no longer inside the InheritDocstrings.__init__ method scope (likely due to my replacement changing indentation or removing the correct block boundaries). I need to inspect the modified region of astropy/utils/misc.py around the InheritDocstrings class to see the exact lines and fix the stray super() placement. I'll print the file around that area to examine the indentation and surrounding context.\n\n```bash\nnl -ba astropy/utils/misc.py | sed -n '520,600p'\n```",
+      "timestamp": 1764752511.039791,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-Cid1y1V3pRUulJT6sOrr31xiGGPP2",
+          "created": 1764752502,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: The RuntimeError \"super(): no arguments\" indicates the super().__init__(name, bases, dct) call is no longer inside the InheritDocstrings.__init__ method scope (likely due to my replacement changing indentation or removing the correct block boundaries). I need to inspect the modified region of astropy/utils/misc.py around the InheritDocstrings class to see the exact lines and fix the stray super() placement. I'll print the file around that area to examine the indentation and surrounding context.\n\n```bash\nnl -ba astropy/utils/misc.py | sed -n '520,600p'\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 457,
+            "prompt_tokens": 7594,
+            "total_tokens": 8051,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 320,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 6912,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\n   520\t        u'Wiggle the thingamajig'\n   521\t    \"\"\"\n   522\t\n   523\t    def __init__(cls, name, bases, dct):\n   524\t        def is_public_member(key):\n   525\t            return (\n   526\t                (key.startswith('__') and key.endswith('__')\n   527\t                 and len(key) > 4) or\n   528\t                not key.startswith('_'))\n   529\t\n   530\t        for key, val in dct.items():\n   531\t            if is_public_member(key):\n   532\t                # Support plain functions, and descriptors that wrap\n   533\t                # functions: classmethod, staticmethod, and property.\n   534\t                # Determine the underlying function (target) whose\n   535\t                # __doc__ should be set.\n   536\t                target = None\n   537\t                if inspect.isfunction(val):\n   538\t                    target = val\n   539\t                elif isinstance(val, (classmethod, staticmethod)):\n   540\t                    target = getattr(val, '__func__', None)\n   541\t                elif isinstance(val, property):\n   542\t                    target = getattr(val, 'fget', None)\n   543\t                # If we don't have a target function, skip\n   544\t                if target is None:\n   545\t                    continue\n   546\t                # Only try to inherit if the target has no docstring\n   547\t                if getattr(target, '__doc__', None) is not None:\n   548\t                    continue\n   549\t                for base in cls.__mro__[1:]:\n   550\t                    super_method = getattr(base, key, None)\n   551\t                    if super_method is not None:\n   552\t                        # Extract the source docstring from the base\n   553\t                        if isinstance(super_method, (classmethod, staticmethod)):\n   554\t                            source = getattr(getattr(super_method, '__func__', None), '__doc__', None)\n   555\t                        elif isinstance(super_method, property):\n   556\t                            source = getattr(getattr(super_method, 'fget', None), '__doc__', None)\n   557\t                        else:\n   558\t                            source = getattr(super_method, '__doc__', None)\n   559\t                        if source:\n   560\t                            # Assign the inherited docstring to the target function\n   561\t                            try:\n   562\t                                target.__doc__ = source\n   563\t                            except Exception:\n   564\t                                # Be conservative: if assignment fails, ignore\n   565\t                                pass\n   566\t                            break\n   567\tsuper().__init__(name, bases, dct)\n   568\t\n   569\t\n   570\tclass OrderedDescriptor(metaclass=abc.ABCMeta):\n   571\t    \"\"\"\n   572\t    Base class for descriptors whose order in the class body should be\n   573\t    preserved.  Intended for use in concert with the\n   574\t    `OrderedDescriptorContainer` metaclass.\n   575\t\n   576\t    Subclasses of `OrderedDescriptor` must define a value for a class attribute\n   577\t    called ``_class_attribute_``.  This is the name of a class attribute on the\n   578\t    *container* class for these descriptors, which will be set to an\n   579\t    `~collections.OrderedDict` at class creation time.  This\n   580\t    `~collections.OrderedDict` will contain a mapping of all class attributes\n   581\t    that were assigned instances of the `OrderedDescriptor` subclass, to the\n   582\t    instances themselves.  See the documentation for\n   583\t    `OrderedDescriptorContainer` for a concrete example.\n   584\t\n   585\t    Optionally, subclasses of `OrderedDescriptor` may define a value for a\n   586\t    class attribute called ``_name_attribute_``.  This should be the name of\n   587\t    an attribute on instances of the subclass.  When specified, during\n   588\t    creation of a class containing these descriptors, the name attribute on\n   589\t    each instance will be set to the name of the class attribute it was\n   590\t    assigned to on the class.\n   591\t\n   592\t    .. note::\n   593\t\n   594\t        Although this class is intended for use with *descriptors* (i.e.\n   595\t        classes that define any of the ``__get__``, ``__set__``, or\n   596\t        ``__delete__`` magic methods), this base class is not itself a\n   597\t        descriptor, and technically this could be used for classes that are\n   598\t        not descriptors too.  However, use with descriptors is the original\n   599\t        intended purpose.\n   600\t    \"\"\"\n</output>",
+      "timestamp": 1764752514.215729
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: The error came from the super().__init__ line losing its indentation and ending up outside the __init__ method. I'll fix the indentation of that specific line in astropy/utils/misc.py, show the surrounding lines to confirm the change, and then run the reproduction script once to verify the behavior.\n\n```bash\npython3 - <<'PY'\nfrom pathlib import Path\np = Path('astropy/utils/misc.py')\ns = p.read_text(encoding='utf-8')\n# Ensure the super().__init__ line is indented inside the __init__ method\ns = s.replace('\\nsuper().__init__(name, bases, dct)\\n', '\\n            super().__init__(name, bases, dct)\\n')\np.write_text(s, encoding='utf-8')\nprint('fixed')\nPY\nnl -ba astropy/utils/misc.py | sed -n '560,580p'\npython3 repro_inheritdoc.py\n```",
+      "timestamp": 1764752531.075807,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-Cid2AoElSO1BvcE6Dvu51bY0sYABZ",
+          "created": 1764752514,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: The error came from the super().__init__ line losing its indentation and ending up outside the __init__ method. I'll fix the indentation of that specific line in astropy/utils/misc.py, show the surrounding lines to confirm the change, and then run the reproduction script once to verify the behavior.\n\n```bash\npython3 - <<'PY'\nfrom pathlib import Path\np = Path('astropy/utils/misc.py')\ns = p.read_text(encoding='utf-8')\n# Ensure the super().__init__ line is indented inside the __init__ method\ns = s.replace('\\nsuper().__init__(name, bases, dct)\\n', '\\n            super().__init__(name, bases, dct)\\n')\np.write_text(s, encoding='utf-8')\nprint('fixed')\nPY\nnl -ba astropy/utils/misc.py | sed -n '560,580p'\npython3 repro_inheritdoc.py\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 1169,
+            "prompt_tokens": 7917,
+            "total_tokens": 9086,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 960,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 1792,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\nfixed\n   560\t                            # Assign the inherited docstring to the target function\n   561\t                            try:\n   562\t                                target.__doc__ = source\n   563\t                            except Exception:\n   564\t                                # Be conservative: if assignment fails, ignore\n   565\t                                pass\n   566\t                            break\n   567\t            super().__init__(name, bases, dct)\n   568\t\n   569\t\n   570\tclass OrderedDescriptor(metaclass=abc.ABCMeta):\n   571\t    \"\"\"\n   572\t    Base class for descriptors whose order in the class body should be\n   573\t    preserved.  Intended for use in concert with the\n   574\t    `OrderedDescriptorContainer` metaclass.\n   575\t\n   576\t    Subclasses of `OrderedDescriptor` must define a value for a class attribute\n   577\t    called ``_class_attribute_``.  This is the name of a class attribute on the\n   578\t    *container* class for these descriptors, which will be set to an\n   579\t    `~collections.OrderedDict` at class creation time.  This\n   580\t    `~collections.OrderedDict` will contain a mapping of all class attributes\nB.foo.fget.__doc__: 'Base property docstring'\nB.foo.__doc__: None\n</output>",
+      "timestamp": 1764752541.9139168
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: The repro shows B.foo.fget.__doc__ was inherited but B.foo.__doc__ remains None \u2014 my patch set the underlying function's __doc__ (fget) but did not update the property's own __doc__. First I'll check the current TODO list so I can add a focused TODO to update the code to also set property.__doc__ (if needed) without duplicating existing tasks.\n\n```bash\ncontext_todos\n```",
+      "timestamp": 1764752555.5966442,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-Cid2ciTzed1jS0E9TvZN2Er1nVsl8",
+          "created": 1764752542,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: The repro shows B.foo.fget.__doc__ was inherited but B.foo.__doc__ remains None \u2014 my patch set the underlying function's __doc__ (fget) but did not update the property's own __doc__. First I'll check the current TODO list so I can add a focused TODO to update the code to also set property.__doc__ (if needed) without duplicating existing tasks.\n\n```bash\ncontext_todos\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 805,
+            "prompt_tokens": 7968,
+            "total_tokens": 8773,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 704,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 1792,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\n## Current TODOs\n\n  1. [ ] Reproduce the bug with a minimal test case\n  2. [ ] Find the function causing the error (look in X module)\n  3. [ ] Understand why Y happens when Z is called\n  4. [\u2713] Implement fix by changing A to B\n  5. [ ] Test the fix with the original reproduction case</output>",
+      "timestamp": 1764752555.604216
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: I'll update the metaclass loop to also replace descriptor objects in the class dict when inheriting docstrings: for properties I'll recreate the property with the inherited doc, and for classmethod/staticmethod I'll recreate those wrappers around the updated function. Then I'll show the modified file region and run the reproduction script once to verify that both the property's fget.__doc__ and property.__doc__ are set.\n\n```bash\npython3 - <<'PY'\nfrom pathlib import Path\np = Path('astropy/utils/misc.py')\ns = p.read_text(encoding='utf-8')\nstart_marker = \"for key, val in dct.items():\"\nsi = s.find(start_marker)\nif si == -1:\n    raise SystemExit(\"start marker not found\")\nend_marker = \"super().__init__(name, bases, dct)\"\nei = s.find(end_marker, si)\nif ei == -1:\n    raise SystemExit(\"end marker not found\")\npre = s[:si]\npost = s[ei:]\nnew_block = (\n    \"for key, val in dct.items():\\n\"\n    \"            if is_public_member(key):\\n\"\n    \"                # Support plain functions, and descriptors that wrap\\n\"\n    \"                # functions: classmethod, staticmethod, and property.\\n\"\n    \"                # Determine the underlying function (target) whose\\n\"\n    \"                # __doc__ should be set.\\n\"\n    \"                target = None\\n\"\n    \"                is_prop = is_classmethod = is_staticmethod = False\\n\"\n    \"                if inspect.isfunction(val):\\n\"\n    \"                    target = val\\n\"\n    \"                elif isinstance(val, classmethod):\\n\"\n    \"                    target = getattr(val, '__func__', None)\\n\"\n    \"                    is_classmethod = True\\n\"\n    \"                elif isinstance(val, staticmethod):\\n\"\n    \"                    target = getattr(val, '__func__', None)\\n\"\n    \"                    is_staticmethod = True\\n\"\n    \"                elif isinstance(val, property):\\n\"\n    \"                    target = getattr(val, 'fget', None)\\n\"\n    \"                    is_prop = True\\n\"\n    \"                # If we don't have a target function, skip\\n\"\n    \"                if target is None:\\n\"\n    \"                    continue\\n\"\n    \"                # Only try to inherit if the target has no docstring\\n\"\n    \"                if getattr(target, '__doc__', None) is not None:\\n\"\n    \"                    continue\\n\"\n    \"                for base in cls.__mro__[1:]:\\n\"\n    \"                    super_method = getattr(base, key, None)\\n\"\n    \"                    if super_method is not None:\\n\"\n    \"                        # Extract the source docstring from the base\\n\"\n    \"                        if isinstance(super_method, (classmethod, staticmethod)):\\n\"\n    \"                            source = getattr(getattr(super_method, '__func__', None), '__doc__', None)\\n\"\n    \"                        elif isinstance(super_method, property):\\n\"\n    \"                            source = getattr(getattr(super_method, 'fget', None), '__doc__', None)\\n\"\n    \"                        else:\\n\"\n    \"                            source = getattr(super_method, '__doc__', None)\\n\"\n    \"                        if source:\\n\"\n    \"                            # Assign the inherited docstring to the target function\\n\"\n    \"                            try:\\n\"\n    \"                                target.__doc__ = source\\n\"\n    \"                                # For descriptor objects, also replace the entry in the\\n\"\n    \"                                # class dict so the descriptor's __doc__ reflects source\\n\"\n    \"                                if is_prop:\\n\"\n    \"                                    dct[key] = property(target, getattr(val, 'fset', None), getattr(val, 'fdel', None), source)\\n\"\n    \"                                elif is_classmethod:\\n\"\n    \"                                    dct[key] = classmethod(target)\\n\"\n    \"                                elif is_staticmethod:\\n\"\n    \"                                    dct[key] = staticmethod(target)\\n\"\n    \"                            except Exception:\\n\"\n    \"                                # Be conservative: if assignment or replacement fails, ignore\\n\"\n    \"                                pass\\n\"\n    \"                            break\\n\"\n)\nnew_text = pre + new_block + post\np.write_text(new_text, encoding='utf-8')\nprint('patched2')\nPY\nnl -ba astropy/utils/misc.py | sed -n '548,576p'\npython3 repro_inheritdoc.py\n```",
+      "timestamp": 1764752605.039815,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-Cid2pvfMAeX9vuSAZuU6jWIONMHq3",
+          "created": 1764752555,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: I'll update the metaclass loop to also replace descriptor objects in the class dict when inheriting docstrings: for properties I'll recreate the property with the inherited doc, and for classmethod/staticmethod I'll recreate those wrappers around the updated function. Then I'll show the modified file region and run the reproduction script once to verify that both the property's fget.__doc__ and property.__doc__ are set.\n\n```bash\npython3 - <<'PY'\nfrom pathlib import Path\np = Path('astropy/utils/misc.py')\ns = p.read_text(encoding='utf-8')\nstart_marker = \"for key, val in dct.items():\"\nsi = s.find(start_marker)\nif si == -1:\n    raise SystemExit(\"start marker not found\")\nend_marker = \"super().__init__(name, bases, dct)\"\nei = s.find(end_marker, si)\nif ei == -1:\n    raise SystemExit(\"end marker not found\")\npre = s[:si]\npost = s[ei:]\nnew_block = (\n    \"for key, val in dct.items():\\n\"\n    \"            if is_public_member(key):\\n\"\n    \"                # Support plain functions, and descriptors that wrap\\n\"\n    \"                # functions: classmethod, staticmethod, and property.\\n\"\n    \"                # Determine the underlying function (target) whose\\n\"\n    \"                # __doc__ should be set.\\n\"\n    \"                target = None\\n\"\n    \"                is_prop = is_classmethod = is_staticmethod = False\\n\"\n    \"                if inspect.isfunction(val):\\n\"\n    \"                    target = val\\n\"\n    \"                elif isinstance(val, classmethod):\\n\"\n    \"                    target = getattr(val, '__func__', None)\\n\"\n    \"                    is_classmethod = True\\n\"\n    \"                elif isinstance(val, staticmethod):\\n\"\n    \"                    target = getattr(val, '__func__', None)\\n\"\n    \"                    is_staticmethod = True\\n\"\n    \"                elif isinstance(val, property):\\n\"\n    \"                    target = getattr(val, 'fget', None)\\n\"\n    \"                    is_prop = True\\n\"\n    \"                # If we don't have a target function, skip\\n\"\n    \"                if target is None:\\n\"\n    \"                    continue\\n\"\n    \"                # Only try to inherit if the target has no docstring\\n\"\n    \"                if getattr(target, '__doc__', None) is not None:\\n\"\n    \"                    continue\\n\"\n    \"                for base in cls.__mro__[1:]:\\n\"\n    \"                    super_method = getattr(base, key, None)\\n\"\n    \"                    if super_method is not None:\\n\"\n    \"                        # Extract the source docstring from the base\\n\"\n    \"                        if isinstance(super_method, (classmethod, staticmethod)):\\n\"\n    \"                            source = getattr(getattr(super_method, '__func__', None), '__doc__', None)\\n\"\n    \"                        elif isinstance(super_method, property):\\n\"\n    \"                            source = getattr(getattr(super_method, 'fget', None), '__doc__', None)\\n\"\n    \"                        else:\\n\"\n    \"                            source = getattr(super_method, '__doc__', None)\\n\"\n    \"                        if source:\\n\"\n    \"                            # Assign the inherited docstring to the target function\\n\"\n    \"                            try:\\n\"\n    \"                                target.__doc__ = source\\n\"\n    \"                                # For descriptor objects, also replace the entry in the\\n\"\n    \"                                # class dict so the descriptor's __doc__ reflects source\\n\"\n    \"                                if is_prop:\\n\"\n    \"                                    dct[key] = property(target, getattr(val, 'fset', None), getattr(val, 'fdel', None), source)\\n\"\n    \"                                elif is_classmethod:\\n\"\n    \"                                    dct[key] = classmethod(target)\\n\"\n    \"                                elif is_staticmethod:\\n\"\n    \"                                    dct[key] = staticmethod(target)\\n\"\n    \"                            except Exception:\\n\"\n    \"                                # Be conservative: if assignment or replacement fails, ignore\\n\"\n    \"                                pass\\n\"\n    \"                            break\\n\"\n)\nnew_text = pre + new_block + post\np.write_text(new_text, encoding='utf-8')\nprint('patched2')\nPY\nnl -ba astropy/utils/misc.py | sed -n '548,576p'\npython3 repro_inheritdoc.py\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 2880,
+            "prompt_tokens": 6527,
+            "total_tokens": 9407,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 1920,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 1792,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>1</returncode>\n<output>\npatched2\n   548\t                    is_prop = True\n   549\t                # If we don't have a target function, skip\n   550\t                if target is None:\n   551\t                    continue\n   552\t                # Only try to inherit if the target has no docstring\n   553\t                if getattr(target, '__doc__', None) is not None:\n   554\t                    continue\n   555\t                for base in cls.__mro__[1:]:\n   556\t                    super_method = getattr(base, key, None)\n   557\t                    if super_method is not None:\n   558\t                        # Extract the source docstring from the base\n   559\t                        if isinstance(super_method, (classmethod, staticmethod)):\n   560\t                            source = getattr(getattr(super_method, '__func__', None), '__doc__', None)\n   561\t                        elif isinstance(super_method, property):\n   562\t                            source = getattr(getattr(super_method, 'fget', None), '__doc__', None)\n   563\t                        else:\n   564\t                            source = getattr(super_method, '__doc__', None)\n   565\t                        if source:\n   566\t                            # Assign the inherited docstring to the target function\n   567\t                            try:\n   568\t                                target.__doc__ = source\n   569\t                                # For descriptor objects, also replace the entry in the\n   570\t                                # class dict so the descriptor's __doc__ reflects source\n   571\t                                if is_prop:\n   572\t                                    dct[key] = property(target, getattr(val, 'fset', None), getattr(val, 'fdel', None), source)\n   573\t                                elif is_classmethod:\n   574\t                                    dct[key] = classmethod(target)\n   575\t                                elif is_staticmethod:\n   576\t                                    dct[key] = staticmethod(target)\nTraceback (most recent call last):\n  File \"repro_inheritdoc.py\", line 1, in <module>\n    from astropy.utils.misc import InheritDocstrings\n  File \"/testbed/astropy/__init__.py\", line 116, in <module>\n    _check_numpy()\n  File \"/testbed/astropy/__init__.py\", line 104, in _check_numpy\n    from .utils import minversion\n  File \"/testbed/astropy/utils/__init__.py\", line 16, in <module>\n    from .misc import *\n  File \"/testbed/astropy/utils/misc.py\", line 581, in <module>\n    super().__init__(name, bases, dct)\nRuntimeError: super(): no arguments\n</output>",
+      "timestamp": 1764752609.7616792
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: The RuntimeError shows the super().__init__ line is outside the __init__ method due to incorrect indentation. I'll re-indent that specific line to match the method body (12 spaces) using a small Python inplace edit, then print the nearby file lines to confirm and run the single reproduction script once to see whether the error is resolved.\n\n```bash\npython3 - <<'PY'\nfrom pathlib import Path\nimport re\np = Path('astropy/utils/misc.py')\ns = p.read_text(encoding='utf-8')\n# Replace any line that is just super().__init__(name, bases, dct) with a properly indented version\nnew = re.sub(r'^[ \\t]*super\\.__init__\\(name, bases, dct\\)\\s*$', '            super().__init__(name, bases, dct)', s, flags=re.M)\nif s == new:\n    print('no change needed')\nelse:\n    p.write_text(new, encoding='utf-8')\n    print('fixed indentation of super().__init__')\nPY\nnl -ba astropy/utils/misc.py | sed -n '572,584p'\npython3 repro_inheritdoc.py\n```",
+      "timestamp": 1764752626.437124,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-Cid3hNbhDCoiUS1C19sQU0AxGwgdp",
+          "created": 1764752609,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: The RuntimeError shows the super().__init__ line is outside the __init__ method due to incorrect indentation. I'll re-indent that specific line to match the method body (12 spaces) using a small Python inplace edit, then print the nearby file lines to confirm and run the single reproduction script once to see whether the error is resolved.\n\n```bash\npython3 - <<'PY'\nfrom pathlib import Path\nimport re\np = Path('astropy/utils/misc.py')\ns = p.read_text(encoding='utf-8')\n# Replace any line that is just super().__init__(name, bases, dct) with a properly indented version\nnew = re.sub(r'^[ \\t]*super\\.__init__\\(name, bases, dct\\)\\s*$', '            super().__init__(name, bases, dct)', s, flags=re.M)\nif s == new:\n    print('no change needed')\nelse:\n    p.write_text(new, encoding='utf-8')\n    print('fixed indentation of super().__init__')\nPY\nnl -ba astropy/utils/misc.py | sed -n '572,584p'\npython3 repro_inheritdoc.py\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 1284,
+            "prompt_tokens": 7284,
+            "total_tokens": 8568,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 1024,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 2304,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>1</returncode>\n<output>\nno change needed\n   572\t                                    dct[key] = property(target, getattr(val, 'fset', None), getattr(val, 'fdel', None), source)\n   573\t                                elif is_classmethod:\n   574\t                                    dct[key] = classmethod(target)\n   575\t                                elif is_staticmethod:\n   576\t                                    dct[key] = staticmethod(target)\n   577\t                            except Exception:\n   578\t                                # Be conservative: if assignment or replacement fails, ignore\n   579\t                                pass\n   580\t                            break\n   581\tsuper().__init__(name, bases, dct)\n   582\t\n   583\t\n   584\tclass OrderedDescriptor(metaclass=abc.ABCMeta):\nTraceback (most recent call last):\n  File \"repro_inheritdoc.py\", line 1, in <module>\n    from astropy.utils.misc import InheritDocstrings\n  File \"/testbed/astropy/__init__.py\", line 116, in <module>\n    _check_numpy()\n  File \"/testbed/astropy/__init__.py\", line 104, in _check_numpy\n    from .utils import minversion\n  File \"/testbed/astropy/utils/__init__.py\", line 16, in <module>\n    from .misc import *\n  File \"/testbed/astropy/utils/misc.py\", line 581, in <module>\n    super().__init__(name, bases, dct)\nRuntimeError: super(): no arguments\n</output>",
+      "timestamp": 1764752641.854186
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: The previous regex missed the parentheses in the literal \"super()\" so it didn't match the unindented line. I'll correct that by replacing any line that contains \"super().__init__(name, bases, dct)\" (allowing any leading whitespace) with the properly indented line inside the __init__ method. Then I'll print the nearby file region to confirm and run the reproduction script once.\n\n```bash\npython3 - <<'PY'\nfrom pathlib import Path\nimport re\np = Path('astropy/utils/misc.py')\ns = p.read_text(encoding='utf-8')\npattern = r'(?m)^[ \\t]*super\\(\\)\\.__init__\\(name, bases, dct\\)\\s*$'\nreplacement = '            super().__init__(name, bases, dct)'\nnew = re.sub(pattern, replacement, s)\nif s == new:\n    print('no change needed')\nelse:\n    p.write_text(new, encoding='utf-8')\n    print('fixed super() indentation')\nPY\nnl -ba astropy/utils/misc.py | sed -n '576,586p'\npython3 repro_inheritdoc.py\n```",
+      "timestamp": 1764752664.283744,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-Cid4EXBhfmUKbCETunHfX0uWMvBxN",
+          "created": 1764752642,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: The previous regex missed the parentheses in the literal \"super()\" so it didn't match the unindented line. I'll correct that by replacing any line that contains \"super().__init__(name, bases, dct)\" (allowing any leading whitespace) with the properly indented line inside the __init__ method. Then I'll print the nearby file region to confirm and run the reproduction script once.\n\n```bash\npython3 - <<'PY'\nfrom pathlib import Path\nimport re\np = Path('astropy/utils/misc.py')\ns = p.read_text(encoding='utf-8')\npattern = r'(?m)^[ \\t]*super\\(\\)\\.__init__\\(name, bases, dct\\)\\s*$'\nreplacement = '            super().__init__(name, bases, dct)'\nnew = re.sub(pattern, replacement, s)\nif s == new:\n    print('no change needed')\nelse:\n    p.write_text(new, encoding='utf-8')\n    print('fixed super() indentation')\nPY\nnl -ba astropy/utils/misc.py | sed -n '576,586p'\npython3 repro_inheritdoc.py\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 1469,
+            "prompt_tokens": 7883,
+            "total_tokens": 9352,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 1216,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 6912,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\nfixed super() indentation\n   576\t                                    dct[key] = staticmethod(target)\n   577\t                            except Exception:\n   578\t                                # Be conservative: if assignment or replacement fails, ignore\n   579\t                                pass\n   580\t                            break\n   581\t            super().__init__(name, bases, dct)\n   582\tclass OrderedDescriptor(metaclass=abc.ABCMeta):\n   583\t    \"\"\"\n   584\t    Base class for descriptors whose order in the class body should be\n   585\t    preserved.  Intended for use in concert with the\n   586\t    `OrderedDescriptorContainer` metaclass.\nB.foo.fget.__doc__: 'Base property docstring'\nB.foo.__doc__: None\n</output>",
+      "timestamp": 1764752668.753886
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: The property's fget got its __doc__ set, but the property object on the class still showed __doc__ as None because I modified the classdict (dct) instead of the actual class object. In a metaclass __init__ we must set the attribute on the class (setattr(cls, ...)) so the descriptor's __doc__ is visible on the created class. I'll update the file to replace dct[...] = ... with setattr(cls, ...) for property/classmethod/staticmethod assignments, show the nearby file region, and run the minimal repro once.\n\n```bash\npython3 - <<'PY'\nfrom pathlib import Path\nimport re\np = Path('astropy/utils/misc.py')\ns = p.read_text(encoding='utf-8')\ns_new = re.sub(r'dct\\\\[key\\\\]\\\\s*=\\\\s*property\\\\(([^)]*)\\\\)', r'setattr(cls, key, property(\\1))', s)\ns_new = re.sub(r'dct\\\\[key\\\\]\\\\s*=\\\\s*classmethod\\\\(([^)]*)\\\\)', r'setattr(cls, key, classmethod(\\1))', s_new)\ns_new = re.sub(r'dct\\\\[key\\\\]\\\\s*=\\\\s*staticmethod\\\\(([^)]*)\\\\)', r'setattr(cls, key, staticmethod(\\1))', s_new)\nif s_new == s:\n    print('no change needed')\nelse:\n    p.write_text(s_new, encoding='utf-8')\n    print('patched3')\nPY\nnl -ba astropy/utils/misc.py | sed -n '560,584p'\npython3 repro_inheritdoc.py\n```",
+      "timestamp": 1764752697.817038,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-Cid4fVwSjWmyHqHHcGxpEjBCqB4rz",
+          "created": 1764752669,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: The property's fget got its __doc__ set, but the property object on the class still showed __doc__ as None because I modified the classdict (dct) instead of the actual class object. In a metaclass __init__ we must set the attribute on the class (setattr(cls, ...)) so the descriptor's __doc__ is visible on the created class. I'll update the file to replace dct[...] = ... with setattr(cls, ...) for property/classmethod/staticmethod assignments, show the nearby file region, and run the minimal repro once.\n\n```bash\npython3 - <<'PY'\nfrom pathlib import Path\nimport re\np = Path('astropy/utils/misc.py')\ns = p.read_text(encoding='utf-8')\ns_new = re.sub(r'dct\\\\[key\\\\]\\\\s*=\\\\s*property\\\\(([^)]*)\\\\)', r'setattr(cls, key, property(\\1))', s)\ns_new = re.sub(r'dct\\\\[key\\\\]\\\\s*=\\\\s*classmethod\\\\(([^)]*)\\\\)', r'setattr(cls, key, classmethod(\\1))', s_new)\ns_new = re.sub(r'dct\\\\[key\\\\]\\\\s*=\\\\s*staticmethod\\\\(([^)]*)\\\\)', r'setattr(cls, key, staticmethod(\\1))', s_new)\nif s_new == s:\n    print('no change needed')\nelse:\n    p.write_text(s_new, encoding='utf-8')\n    print('patched3')\nPY\nnl -ba astropy/utils/misc.py | sed -n '560,584p'\npython3 repro_inheritdoc.py\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 1704,
+            "prompt_tokens": 7464,
+            "total_tokens": 9168,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 1344,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 1792,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\nno change needed\n   560\t                            source = getattr(getattr(super_method, '__func__', None), '__doc__', None)\n   561\t                        elif isinstance(super_method, property):\n   562\t                            source = getattr(getattr(super_method, 'fget', None), '__doc__', None)\n   563\t                        else:\n   564\t                            source = getattr(super_method, '__doc__', None)\n   565\t                        if source:\n   566\t                            # Assign the inherited docstring to the target function\n   567\t                            try:\n   568\t                                target.__doc__ = source\n   569\t                                # For descriptor objects, also replace the entry in the\n   570\t                                # class dict so the descriptor's __doc__ reflects source\n   571\t                                if is_prop:\n   572\t                                    dct[key] = property(target, getattr(val, 'fset', None), getattr(val, 'fdel', None), source)\n   573\t                                elif is_classmethod:\n   574\t                                    dct[key] = classmethod(target)\n   575\t                                elif is_staticmethod:\n   576\t                                    dct[key] = staticmethod(target)\n   577\t                            except Exception:\n   578\t                                # Be conservative: if assignment or replacement fails, ignore\n   579\t                                pass\n   580\t                            break\n   581\t            super().__init__(name, bases, dct)\n   582\tclass OrderedDescriptor(metaclass=abc.ABCMeta):\n   583\t    \"\"\"\n   584\t    Base class for descriptors whose order in the class body should be\nB.foo.fget.__doc__: 'Base property docstring'\nB.foo.__doc__: None\n</output>",
+      "timestamp": 1764752703.2304032
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: The property descriptor's __doc__ is still None because I only updated the classdict (dct) instead of setting the attribute on the created class. In a metaclass __init__ we must call setattr(cls, key, ...) so the descriptor on the class reflects the new __doc__. I'll replace the three dct[key] = ... lines with setattr(cls, key, ...) variants, then print the nearby file region and run the minimal repro once to verify both fget.__doc__ and property.__doc__ are set.\n\n```bash\npython3 - <<'PY'\nfrom pathlib import Path\np = Path('astropy/utils/misc.py')\ns = p.read_text(encoding='utf-8')\nreplacements = {\n    \"dct[key] = property(target, getattr(val, 'fset', None), getattr(val, 'fdel', None), source)\": \"setattr(cls, key, property(target, getattr(val, 'fset', None), getattr(val, 'fdel', None), source))\",\n    \"dct[key] = classmethod(target)\": \"setattr(cls, key, classmethod(target))\",\n    \"dct[key] = staticmethod(target)\": \"setattr(cls, key, staticmethod(target))\",\n}\nnew = s\nfor old, newv in replacements.items():\n    if old in new:\n        new = new.replace(old, newv)\nif new == s:\n    print('no change needed')\nelse:\n    p.write_text(new, encoding='utf-8')\n    print('patched4')\nPY\nnl -ba astropy/utils/misc.py | sed -n '564,584p' && python3 repro_inheritdoc.py\n```",
+      "timestamp": 1764752720.914201,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-Cid5Dzo3mut0tVUikPY5QZHPOJxrU",
+          "created": 1764752703,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: The property descriptor's __doc__ is still None because I only updated the classdict (dct) instead of setting the attribute on the created class. In a metaclass __init__ we must call setattr(cls, key, ...) so the descriptor on the class reflects the new __doc__. I'll replace the three dct[key] = ... lines with setattr(cls, key, ...) variants, then print the nearby file region and run the minimal repro once to verify both fget.__doc__ and property.__doc__ are set.\n\n```bash\npython3 - <<'PY'\nfrom pathlib import Path\np = Path('astropy/utils/misc.py')\ns = p.read_text(encoding='utf-8')\nreplacements = {\n    \"dct[key] = property(target, getattr(val, 'fset', None), getattr(val, 'fdel', None), source)\": \"setattr(cls, key, property(target, getattr(val, 'fset', None), getattr(val, 'fdel', None), source))\",\n    \"dct[key] = classmethod(target)\": \"setattr(cls, key, classmethod(target))\",\n    \"dct[key] = staticmethod(target)\": \"setattr(cls, key, staticmethod(target))\",\n}\nnew = s\nfor old, newv in replacements.items():\n    if old in new:\n        new = new.replace(old, newv)\nif new == s:\n    print('no change needed')\nelse:\n    p.write_text(new, encoding='utf-8')\n    print('patched4')\nPY\nnl -ba astropy/utils/misc.py | sed -n '564,584p' && python3 repro_inheritdoc.py\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 1194,
+            "prompt_tokens": 8058,
+            "total_tokens": 9252,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 832,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 1792,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\npatched4\n   564\t                            source = getattr(super_method, '__doc__', None)\n   565\t                        if source:\n   566\t                            # Assign the inherited docstring to the target function\n   567\t                            try:\n   568\t                                target.__doc__ = source\n   569\t                                # For descriptor objects, also replace the entry in the\n   570\t                                # class dict so the descriptor's __doc__ reflects source\n   571\t                                if is_prop:\n   572\t                                    setattr(cls, key, property(target, getattr(val, 'fset', None), getattr(val, 'fdel', None), source))\n   573\t                                elif is_classmethod:\n   574\t                                    setattr(cls, key, classmethod(target))\n   575\t                                elif is_staticmethod:\n   576\t                                    setattr(cls, key, staticmethod(target))\n   577\t                            except Exception:\n   578\t                                # Be conservative: if assignment or replacement fails, ignore\n   579\t                                pass\n   580\t                            break\n   581\t            super().__init__(name, bases, dct)\n   582\tclass OrderedDescriptor(metaclass=abc.ABCMeta):\n   583\t    \"\"\"\n   584\t    Base class for descriptors whose order in the class body should be\nB.foo.fget.__doc__: 'Base property docstring'\nB.foo.__doc__: 'Base property docstring'\n</output>",
+      "timestamp": 1764752729.953726
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: I've implemented and verified the fix: the property's fget.__doc__ and the property's __doc__ are now both set on the derived class. Next, mark the reproduction, investigation, and verification TODOs complete so the context reflects that the fix was implemented and tested. I'll mark TODOs 1, 2, 3, and 5 complete (TODO 4 was already checked earlier).\n\n```bash\ncontext_todos --complete 1 && context_todos --complete 2 && context_todos --complete 3 && context_todos --complete 5\n```",
+      "timestamp": 1764752748.448173,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-Cid5ezLm4MJl8eDLB334h0zBTDoVf",
+          "created": 1764752730,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: I've implemented and verified the fix: the property's fget.__doc__ and the property's __doc__ are now both set on the derived class. Next, mark the reproduction, investigation, and verification TODOs complete so the context reflects that the fix was implemented and tested. I'll mark TODOs 1, 2, 3, and 5 complete (TODO 4 was already checked earlier).\n\n```bash\ncontext_todos --complete 1 && context_todos --complete 2 && context_todos --complete 3 && context_todos --complete 5\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 1217,
+            "prompt_tokens": 7134,
+            "total_tokens": 8351,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 1088,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 1792,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\n\u2713 Completed TODO #1: Reproduce the bug with a minimal test case\n\u2713 Completed TODO #2: Find the function causing the error (look in X module)\n\u2713 Completed TODO #3: Understand why Y happens when Z is called\n\u2713 Completed TODO #5: Test the fix with the original reproduction case</output>",
+      "timestamp": 1764752748.714805
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: The fix was applied and verified: property fget.__doc__ and property.__doc__ are both set on the subclass. All relevant TODOs were marked complete. Now submit the final patch (standalone submission command).\n\n```bash\necho COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && git diff --cached\n```",
+      "timestamp": 1764752752.762827,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-Cid5xhlrMID4sT9fpYa706Pj1r3On",
+          "created": 1764752749,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: The fix was applied and verified: property fget.__doc__ and property.__doc__ are both set on the subclass. All relevant TODOs were marked complete. Now submit the final patch (standalone submission command).\n\n```bash\necho COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && git diff --cached\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 208,
+            "prompt_tokens": 7342,
+            "total_tokens": 7550,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 128,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 7040,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "diff --git a/astropy/utils/misc.py b/astropy/utils/misc.py\nindex de3fb01d1..76969e13c 100644\n--- a/astropy/utils/misc.py\n+++ b/astropy/utils/misc.py\n@@ -528,18 +528,57 @@ class InheritDocstrings(type):\n                 not key.startswith('_'))\n \n         for key, val in dct.items():\n-            if (inspect.isfunction(val) and\n-                is_public_member(key) and\n-                val.__doc__ is None):\n+            if is_public_member(key):\n+                # Support plain functions, and descriptors that wrap\n+                # functions: classmethod, staticmethod, and property.\n+                # Determine the underlying function (target) whose\n+                # __doc__ should be set.\n+                target = None\n+                is_prop = is_classmethod = is_staticmethod = False\n+                if inspect.isfunction(val):\n+                    target = val\n+                elif isinstance(val, classmethod):\n+                    target = getattr(val, '__func__', None)\n+                    is_classmethod = True\n+                elif isinstance(val, staticmethod):\n+                    target = getattr(val, '__func__', None)\n+                    is_staticmethod = True\n+                elif isinstance(val, property):\n+                    target = getattr(val, 'fget', None)\n+                    is_prop = True\n+                # If we don't have a target function, skip\n+                if target is None:\n+                    continue\n+                # Only try to inherit if the target has no docstring\n+                if getattr(target, '__doc__', None) is not None:\n+                    continue\n                 for base in cls.__mro__[1:]:\n                     super_method = getattr(base, key, None)\n                     if super_method is not None:\n-                        val.__doc__ = super_method.__doc__\n-                        break\n-\n-        super().__init__(name, bases, dct)\n-\n-\n+                        # Extract the source docstring from the base\n+                        if isinstance(super_method, (classmethod, staticmethod)):\n+                            source = getattr(getattr(super_method, '__func__', None), '__doc__', None)\n+                        elif isinstance(super_method, property):\n+                            source = getattr(getattr(super_method, 'fget', None), '__doc__', None)\n+                        else:\n+                            source = getattr(super_method, '__doc__', None)\n+                        if source:\n+                            # Assign the inherited docstring to the target function\n+                            try:\n+                                target.__doc__ = source\n+                                # For descriptor objects, also replace the entry in the\n+                                # class dict so the descriptor's __doc__ reflects source\n+                                if is_prop:\n+                                    setattr(cls, key, property(target, getattr(val, 'fset', None), getattr(val, 'fdel', None), source))\n+                                elif is_classmethod:\n+                                    setattr(cls, key, classmethod(target))\n+                                elif is_staticmethod:\n+                                    setattr(cls, key, staticmethod(target))\n+                            except Exception:\n+                                # Be conservative: if assignment or replacement fails, ignore\n+                                pass\n+                            break\n+            super().__init__(name, bases, dct)\n class OrderedDescriptor(metaclass=abc.ABCMeta):\n     \"\"\"\n     Base class for descriptors whose order in the class body should be\ndiff --git a/repro_inheritdoc.py b/repro_inheritdoc.py\nnew file mode 100644\nindex 000000000..3f487696f\n--- /dev/null\n+++ b/repro_inheritdoc.py\n@@ -0,0 +1,15 @@\n+from astropy.utils.misc import InheritDocstrings\n+\n+class A(metaclass=InheritDocstrings):\n+    @property\n+    def foo(self):\n+        \"Base property docstring\"\n+        return 1\n+\n+class B(A):\n+    @property\n+    def foo(self):\n+        return 2\n+\n+print(\"B.foo.fget.__doc__:\", repr(B.foo.fget.__doc__))\n+print(\"B.foo.__doc__:\", repr(B.foo.__doc__))\n",
+      "timestamp": 1764752769.287607
+    }
+  ],
+  "trajectory_format": "mini-swe-agent-1",
+  "instance_id": "astropy__astropy-7166"
+}

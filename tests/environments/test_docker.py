@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from minisweagent.environments.docker import DockerEnvironment, DockerEnvironmentConfig
+from minisweagent_tool.environments.docker import DockerEnvironment, DockerEnvironmentConfig
 
 
 def is_docker_available():

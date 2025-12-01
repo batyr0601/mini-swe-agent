@@ -1,0 +1,102 @@
+{
+  "astropy__astropy-7336": {
+    "model_name_or_path": "openai/gpt-5-mini",
+    "instance_id": "astropy__astropy-7336",
+    "model_patch": "diff --git a/astropy/units/decorators.py b/astropy/units/decorators.py\nindex 8bece5a85..4113cf98a 100644\n--- a/astropy/units/decorators.py\n+++ b/astropy/units/decorators.py\n@@ -220,7 +220,9 @@ class QuantityInput:\n             # Call the original function with any equivalencies in force.\n             with add_enabled_equivalencies(self.equivalencies):\n                 return_ = wrapped_function(*func_args, **func_kwargs)\n-            if wrapped_signature.return_annotation is not inspect.Signature.empty:\n+            if (wrapped_signature.return_annotation is not inspect.Signature.empty and\n+                    wrapped_signature.return_annotation is not None and\n+                    return_ is not None):\n                 return return_.to(wrapped_signature.return_annotation)\n             else:\n                 return return_\ndiff --git a/repro.py b/repro.py\nnew file mode 100644\nindex 000000000..223e8faa2\n--- /dev/null\n+++ b/repro.py\n@@ -0,0 +1,14 @@\n+#!/usr/bin/env python3\n+import sys\n+sys.path.insert(0, '.')\n+import astropy.units as u\n+from astropy.units import quantity_input\n+\n+class C:\n+    @quantity_input(x=u.m)\n+    def __init__(self, x: u.Quantity) -> None:\n+        self.x = x\n+\n+print(\"Instantiating C with 1 m\")\n+c = C(1 * u.m)\n+print(\"Instance created, x =\", c.x)\n"
+  },
+  "astropy__astropy-14508": {
+    "model_name_or_path": "openai/gpt-5-mini",
+    "instance_id": "astropy__astropy-14508",
+    "model_patch": "diff --git a/astropy/io/fits/card.py b/astropy/io/fits/card.py\nindex 118bfced8..99f6ec916 100644\n--- a/astropy/io/fits/card.py\n+++ b/astropy/io/fits/card.py\n@@ -1299,20 +1299,27 @@ def _format_value(value):\n \n def _format_float(value):\n     \"\"\"Format a floating number to make sure it gets the decimal point.\"\"\"\n-    value_str = f\"{value:.16G}\"\n+    value_str = f\"{value:.17G}\"\n     if \".\" not in value_str and \"E\" not in value_str:\n         value_str += \".0\"\n     elif \"E\" in value_str:\n-        # On some Windows builds of Python (and possibly other platforms?) the\n-        # exponent is zero-padded out to, it seems, three digits.  Normalize\n-        # the format to pad only to two digits.\n+        # Format scientific notation with a precision that ensures the total\n+        # string length does not exceed 20 characters, and normalize the\n+        # exponent to have a sign and two digits.  Use rounding rather than\n+        # truncation to preserve significant digits.\n+        # Determine a precision that keeps the exponent part as 'E\u00b1dd' (4 chars)\n+        # and leaves the remaining chars for the significand.  For the FITS\n+        # width of 20 characters this yields up to 14 digits after the decimal.\n+        precision = 14\n+        value_str = f\"{value:.{precision}E}\"\n         significand, exponent = value_str.split(\"E\")\n         if exponent[0] in (\"+\", \"-\"):\n             sign = exponent[0]\n-            exponent = exponent[1:]\n+            expnum = exponent[1:]\n         else:\n             sign = \"\"\n-        value_str = f\"{significand}E{sign}{int(exponent):02d}\"\n+            expnum = exponent\n+        value_str = f\"{significand}E{sign}{int(expnum):02d}\"\n \n     # Limit the value string to at most 20 characters.\n     str_len = len(value_str)\ndiff --git a/repro_float.py b/repro_float.py\nnew file mode 100644\nindex 000000000..811406773\n--- /dev/null\n+++ b/repro_float.py\n@@ -0,0 +1,12 @@\n+from astropy.io.fits.card import _format_float\n+vals = [\n+    1.2345678901234567,\n+    1.0/3.0,\n+    1234567890123456789.0,\n+    1.0000000000000002,\n+    9.999999999999999e20,\n+    1.234567890123456789e-10,\n+]\n+for v in vals:\n+    s = _format_float(v)\n+    print(repr(v), \"->\", s, \"(len\", len(s), \")\")\n"
+  },
+  "astropy__astropy-14096": {
+    "model_name_or_path": "openai/gpt-5-mini",
+    "instance_id": "astropy__astropy-14096",
+    "model_patch": "diff --git a/astropy/coordinates/sky_coordinate.py b/astropy/coordinates/sky_coordinate.py\nindex ab475f7d0..a301dc1ba 100644\n--- a/astropy/coordinates/sky_coordinate.py\n+++ b/astropy/coordinates/sky_coordinate.py\n@@ -895,6 +895,24 @@ class SkyCoord(ShapedLikeNDArray):\n                 return self.transform_to(attr)\n \n         # Fail\n+        # If a descriptor on the class (e.g. a property) raised an\n+        # AttributeError while being accessed, Python will call\n+        # __getattr__ next. In that case we should re-raise the original\n+        # AttributeError so its message is not masked.\n+        import sys, inspect\n+        exc = sys.exc_info()[1]\n+        if isinstance(exc, AttributeError):\n+            # If a descriptor (e.g. a property) on the class or its bases raised\n+            # AttributeError while being accessed, re-raise the original error\n+            # so its message isn't masked by the generic message below.\n+            desc = None\n+            for cls in type(self).mro():\n+                if attr in getattr(cls, \"__dict__\", {}):\n+                    desc = cls.__dict__[attr]\n+                    break\n+            if desc is not None:\n+                raise exc\n+\n         raise AttributeError(\n             f\"'{self.__class__.__name__}' object has no attribute '{attr}'\"\n         )\ndiff --git a/repro.py b/repro.py\nnew file mode 100644\nindex 000000000..a2437cadc\n--- /dev/null\n+++ b/repro.py\n@@ -0,0 +1,5 @@\n+#!/usr/bin/env python3\n+# Minimal reproduction: verify the patched module imports cleanly\n+import importlib\n+mod = importlib.import_module('astropy.coordinates.sky_coordinate')\n+print(\"REPRO_IMPORT_OK\")\ndiff --git a/repro_skycoord.py b/repro_skycoord.py\nnew file mode 100644\nindex 000000000..a6c735638\n--- /dev/null\n+++ b/repro_skycoord.py\n@@ -0,0 +1,18 @@\n+#!/usr/bin/env python3\n+from astropy.coordinates import SkyCoord\n+import astropy.units as u\n+\n+class SubSkyCoord(SkyCoord):\n+    @property\n+    def broken_prop(self):\n+        # Simulate a descriptor/property raising AttributeError internally\n+        raise AttributeError(\"inner property error\")\n+\n+if __name__ == \"__main__\":\n+    s = SubSkyCoord(ra=10*u.deg, dec=20*u.deg, frame='icrs')\n+    try:\n+        print(\"Accessing broken_prop...\")\n+        s.broken_prop\n+    except Exception as e:\n+        import traceback\n+        traceback.print_exc()\n"
+  },
+  "astropy__astropy-7671": {
+    "model_name_or_path": "openai/gpt-5-mini",
+    "instance_id": "astropy__astropy-7671",
+    "model_patch": ""
+  },
+  "astropy__astropy-12907": {
+    "model_name_or_path": "openai/gpt-5-mini",
+    "instance_id": "astropy__astropy-12907",
+    "model_patch": ""
+  },
+  "django__django-11066": {
+    "model_name_or_path": "openai/gpt-5-mini",
+    "instance_id": "django__django-11066",
+    "model_patch": "diff --git a/django/contrib/contenttypes/management/__init__.py b/django/contrib/contenttypes/management/__init__.py\nindex 2b5f688136..54e5e4108c 100644\n--- a/django/contrib/contenttypes/management/__init__.py\n+++ b/django/contrib/contenttypes/management/__init__.py\n@@ -24,7 +24,7 @@ class RenameContentType(migrations.RunPython):\n             content_type.model = new_model\n             try:\n                 with transaction.atomic(using=db):\n-                    content_type.save(update_fields={'model'})\n+                    content_type.save(update_fields={'model'}, using=db)\n             except IntegrityError:\n                 # Gracefully fallback if a stale content type causes a\n                 # conflict as remove_stale_contenttypes will take care of\ndiff --git a/repro_check_save.py b/repro_check_save.py\nnew file mode 100644\nindex 0000000000..c40960cad8\n--- /dev/null\n+++ b/repro_check_save.py\n@@ -0,0 +1,14 @@\n+import re,sys\n+p=\"django/contrib/contenttypes/management/__init__.py\"\n+s=open(p).read()\n+m=re.search(r\"content_type\\.save\\(([^)]*)\\)\",s,re.S)\n+if not m:\n+    print(\"FAIL: save(...) not found\")\n+    sys.exit(2)\n+inside=m.group(1)\n+if \"using=db\" in inside:\n+    print(\"PASS: using=db present\")\n+    sys.exit(0)\n+else:\n+    print(\"FAIL: using=db missing\")\n+    sys.exit(1)\n"
+  },
+  "astropy__astropy-7166": {
+    "model_name_or_path": "openai/gpt-5-mini",
+    "instance_id": "astropy__astropy-7166",
+    "model_patch": ""
+  },
+  "astropy__astropy-14365": {
+    "model_name_or_path": "openai/gpt-5-mini",
+    "instance_id": "astropy__astropy-14365",
+    "model_patch": ""
+  },
+  "django__django-10880": {
+    "model_name_or_path": "openai/gpt-5-mini",
+    "instance_id": "django__django-10880",
+    "model_patch": ""
+  },
+  "astropy__astropy-13579": {
+    "model_name_or_path": "openai/gpt-5-mini",
+    "instance_id": "astropy__astropy-13579",
+    "model_patch": ""
+  },
+  "django__django-11095": {
+    "model_name_or_path": "openai/gpt-5-mini",
+    "instance_id": "django__django-11095",
+    "model_patch": "diff --git a/repro_get_inlines.py b/repro_get_inlines.py\nnew file mode 100644\nindex 0000000000..e28ec65a1f\n--- /dev/null\n+++ b/repro_get_inlines.py\n@@ -0,0 +1,14 @@\n+from django.contrib import admin\n+from django.contrib.admin import options\n+\n+class DummyMeta: pass\n+class DummyModel:\n+    _meta = DummyMeta()\n+\n+ma = options.ModelAdmin(DummyModel, admin.site)\n+print(\"has get_inlines:\", hasattr(ma, \"get_inlines\"))\n+try:\n+    print(\"Calling get_inlines:\", ma.get_inlines(None, None))\n+except Exception as e:\n+    import traceback\n+    traceback.print_exc()\n"
+  },
+  "django__django-11239": {
+    "model_name_or_path": "openai/gpt-5-mini",
+    "instance_id": "django__django-11239",
+    "model_patch": "diff --git a/django/db/backends/postgresql/client.py b/django/db/backends/postgresql/client.py\nindex cf4df76882..c0e58d837f 100644\n--- a/django/db/backends/postgresql/client.py\n+++ b/django/db/backends/postgresql/client.py\n@@ -30,6 +30,10 @@ class DatabaseClient(BaseDatabaseClient):\n         subprocess_env = os.environ.copy()\n         if passwd:\n             subprocess_env['PGPASSWORD'] = str(passwd)\n+        if conn_params.get('sslcert'):\n+            subprocess_env['PGSSLCERT'] = str(conn_params.get('sslcert'))\n+        if conn_params.get('sslkey'):\n+            subprocess_env['PGSSLKEY'] = str(conn_params.get('sslkey'))\n         try:\n             # Allow SIGINT to pass to psql to abort queries.\n             signal.signal(signal.SIGINT, signal.SIG_IGN)\n"
+  },
+  "astropy__astropy-14309": {
+    "model_name_or_path": "openai/gpt-5-mini",
+    "instance_id": "astropy__astropy-14309",
+    "model_patch": ""
+  },
+  "django__django-10914": {
+    "model_name_or_path": "openai/gpt-5-mini",
+    "instance_id": "django__django-10914",
+    "model_patch": ""
+  },
+  "django__django-11119": {
+    "model_name_or_path": "openai/gpt-5-mini",
+    "instance_id": "django__django-11119",
+    "model_patch": ""
+  },
+  "django__django-11163": {
+    "model_name_or_path": "openai/gpt-5-mini",
+    "instance_id": "django__django-11163",
+    "model_patch": ""
+  },
+  "django__django-11099": {
+    "model_name_or_path": "openai/gpt-5-mini",
+    "instance_id": "django__django-11099",
+    "model_patch": ""
+  },
+  "django__django-11292": {
+    "model_name_or_path": "openai/gpt-5-mini",
+    "instance_id": "django__django-11292",
+    "model_patch": ""
+  },
+  "django__django-11179": {
+    "model_name_or_path": "openai/gpt-5-mini",
+    "instance_id": "django__django-11179",
+    "model_patch": ""
+  },
+  "django__django-11451": {
+    "model_name_or_path": "openai/gpt-5-mini",
+    "instance_id": "django__django-11451",
+    "model_patch": ""
+  }
+}

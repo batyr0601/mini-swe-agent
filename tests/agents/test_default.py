@@ -1,8 +1,8 @@
 import pytest
 
-from minisweagent.agents.default import DefaultAgent, NonTerminatingException
-from minisweagent.environments.local import LocalEnvironment
-from minisweagent.models.test_models import DeterministicModel
+from minisweagent_tool.agents.default import DefaultAgent, NonTerminatingException
+from minisweagent_tool.environments.local import LocalEnvironment
+from minisweagent_tool.models.test_models import DeterministicModel
 
 
 def test_successful_completion():

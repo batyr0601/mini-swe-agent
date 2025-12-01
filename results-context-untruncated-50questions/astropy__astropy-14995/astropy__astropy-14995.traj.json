@@ -1,0 +1,1080 @@
+{
+  "info": {
+    "exit_status": "Submitted",
+    "submission": "diff --git a/astropy/nddata/mixins/ndarithmetic.py b/astropy/nddata/mixins/ndarithmetic.py\nindex 4153dfccb..09a88c38a 100644\n--- a/astropy/nddata/mixins/ndarithmetic.py\n+++ b/astropy/nddata/mixins/ndarithmetic.py\n@@ -513,14 +513,16 @@ class NDArithmeticMixin:\n             ``handle_mask`` must create (and copy) the returned mask.\n         \"\"\"\n         # If only one mask is present we need not bother about any type checks\n-        if (\n-            self.mask is None and operand is not None and operand.mask is None\n-        ) or handle_mask is None:\n+        # If either operand or self has no mask, copy the existing mask instead of\n+        # calling handle_mask with a None. If both masks are None, return None.\n+        if handle_mask is None:\n+            return None\n+        if self.mask is None and (operand is None or getattr(operand, 'mask', None) is None):\n             return None\n-        elif self.mask is None and operand is not None:\n+        elif self.mask is None:\n             # Make a copy so there is no reference in the result.\n             return deepcopy(operand.mask)\n-        elif operand is None:\n+        elif operand is None or getattr(operand, 'mask', None) is None:\n             return deepcopy(self.mask)\n         else:\n             # Now lets calculate the resulting mask (operation enforces copy)\ndiff --git a/repro_nddata_mask.py b/repro_nddata_mask.py\nnew file mode 100644\nindex 000000000..5db169196\n--- /dev/null\n+++ b/repro_nddata_mask.py\n@@ -0,0 +1,22 @@\n+import numpy as np\n+from astropy.nddata import NDDataRef\n+\n+array = np.array([[0, 1, 0], [1, 0, 1], [0, 1, 0]])\n+mask = np.array([[0, 1, 64], [8, 0, 1], [2, 1, 0]])\n+\n+nref_nomask = NDDataRef(array)\n+nref_mask = NDDataRef(array, mask=mask)\n+\n+def attempt(msg, fn):\n+    print(\"----\", msg)\n+    try:\n+        res = fn()\n+        print(\"Result mask:\", res)\n+    except Exception as e:\n+        print(\"Raised:\", type(e).__name__, e)\n+\n+attempt(\"no mask * constant\", lambda: nref_nomask.multiply(1., handle_mask=np.bitwise_or).mask)\n+attempt(\"no mask * no mask\", lambda: nref_nomask.multiply(nref_nomask, handle_mask=np.bitwise_or).mask)\n+attempt(\"mask * constant\", lambda: nref_mask.multiply(1., handle_mask=np.bitwise_or).mask)\n+attempt(\"mask * mask\", lambda: nref_mask.multiply(nref_mask, handle_mask=np.bitwise_or).mask)\n+attempt(\"mask * no mask\", lambda: nref_mask.multiply(nref_nomask, handle_mask=np.bitwise_or).mask)\n",
+    "model_stats": {
+      "instance_cost": 0.030570500000000007,
+      "api_calls": 18
+    },
+    "mini_version": "1.17.0",
+    "config": {
+      "agent": {
+        "system_template": "You are a helpful assistant that can interact multiple times with a computer shell to solve programming tasks.\nYour response must contain exactly ONE bash code block with ONE command (or commands connected with && or ||).\n\nInclude a THOUGHT section before your command where you explain your reasoning process.\nFormat your response as shown in <format_example>.\n\n<format_example>\nTHOUGHT: Your reasoning and analysis here\n\n```bash\nyour_command_here\n```\n</format_example>\n\nFailure to follow these rules will cause your response to be rejected.\n",
+        "instance_template": "<pr_description>\nConsider the following PR description:\n{{task}}\n</pr_description>\n\n<instructions>\n# Task Instructions\n\n## Overview\nYou're a software engineer interacting continuously with a computer by submitting commands.\nYou'll be helping implement necessary changes to meet requirements in the PR description.\nYour task is specifically to make changes to non-test files in the current directory in order to fix the issue described in the PR description in a way that is general and consistent with the codebase.\n\nIMPORTANT: This is an interactive process where you will think and issue ONE command, see its result, then think and issue your next command.\n\nFor each response:\n1. Include a THOUGHT section explaining your reasoning and what you're trying to accomplish\n2. Provide exactly ONE bash command to execute\n\n## Important Boundaries\n- MODIFY: Regular source code files in /testbed (this is the working directory for all your subsequent commands)\n- DO NOT MODIFY: Tests, configuration files (pyproject.toml, setup.cfg, etc.)\n\n## Recommended Workflow\n1. Analyze the codebase by finding and reading relevant files\n2. Create a script to reproduce the issue\n3. Edit the source code to resolve the issue\n4. Verify your fix works by running your script again\n5. Test edge cases to ensure your fix is robust\n\n## Command Execution Rules\nYou are operating in an environment where\n1. You write a single command\n2. The system executes that command in a subshell\n3. You see the result\n4. You write your next command\n\nEach response should include:\n1. A **THOUGHT** section where you explain your reasoning and plan\n2. A single bash code block with your command\n\nFormat your responses like this:\n\n<format_example>\nTHOUGHT: Here I explain my reasoning process, analysis of the current situation,\nand what I'm trying to accomplish with the command below.\n\n```bash\nyour_command_here\n```\n</format_example>\n\nCommands must be specified in a single bash code block:\n\n```bash\nyour_command_here\n```\n\n**CRITICAL REQUIREMENTS:**\n- Your response SHOULD include a THOUGHT section explaining your reasoning\n- Your response MUST include EXACTLY ONE bash code block\n- This bash block MUST contain EXACTLY ONE command (or a set of commands connected with && or ||)\n- If you include zero or multiple bash blocks, or no command at all, YOUR RESPONSE WILL FAIL\n- Do NOT try to run multiple independent commands in separate blocks in one response\n- Directory or environment variable changes are not persistent. Every action is executed in a new subshell.\n- However, you can prefix any action with `MY_ENV_VAR=MY_VALUE cd /path/to/working/dir && ...` or write/load environment variables from files\n\nExample of a CORRECT response:\n<example_response>\nTHOUGHT: I need to understand the structure of the repository first. Let me check what files are in the current directory to get a better understanding of the codebase.\n\n```bash\nls -la\n```\n</example_response>\n\nExample of an INCORRECT response:\n<example_response>\nTHOUGHT: I need to examine the codebase and then look at a specific file. I'll run multiple commands to do this.\n\n```bash\nls -la\n```\n\nNow I'll read the file:\n\n```bash\ncat file.txt\n```\n</example_response>\n\nIf you need to run multiple commands, either:\n1. Combine them in one block using && or ||\n```bash\ncommand1 && command2 || echo \"Error occurred\"\n```\n\n2. Wait for the first command to complete, see its output, then issue the next command in your following response.\n\n## Environment Details\n- You have a full Linux shell environment\n- Always use non-interactive flags (-y, -f) for commands\n- Avoid interactive tools like vi, nano, or any that require user input\n- If a command isn't available, you can install it\n\n## Useful Command Examples\n\n### Create a new file:\n```bash\ncat <<'EOF' > newfile.py\nimport numpy as np\nhello = \"world\"\nprint(hello)\nEOF\n```\n\n### Edit files with sed:\n```bash\n# Replace all occurrences\nsed -i 's/old_string/new_string/g' filename.py\n\n# Replace only first occurrence\nsed -i 's/old_string/new_string/' filename.py\n\n# Replace first occurrence on line 1\nsed -i '1s/old_string/new_string/' filename.py\n\n# Replace all occurrences in lines 1-10\nsed -i '1,10s/old_string/new_string/g' filename.py\n```\n\n### View file content:\n```bash\n# View specific lines with numbers\nnl -ba filename.py | sed -n '10,20p'\n```\n\n### Any other command you want to run\n```bash\nanything\n```\n\n## Submission\nWhen you've completed your work (reading, editing, testing), and cannot make further progress\nissue exactly the following command:\n\n```bash\necho COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && git diff --cached\n```\n\nThis command will submit your work.\nYou cannot continue working (reading, editing, testing) in any way on this task after submitting.\n</instructions>\n",
+        "timeout_template": "The last command <command>{{action['action']}}</command> timed out and has been killed.\nThe output of the command was:\n <output>\n{{output}}\n</output>\nPlease try another command and make sure to avoid those requiring interactive input.",
+        "format_error_template": "Please always provide EXACTLY ONE action in triple backticks, found {{actions|length}} actions.\n\nPlease format your action in triple backticks as shown in <response_example>.\n\n<response_example>\nHere are some thoughts about why you want to perform the action.\n\n```bash\n<action>\n```\n</response_example>\n\nIf you have completed your assignment, please consult the first message about how to\nsubmit your solution (you will not be able to continue working on this task after that).\n",
+        "action_observation_template": "<returncode>{{output.returncode}}</returncode>\n{% if output.output | length < 10000 -%}\n<output>\n{{ output.output -}}\n</output>\n{%- else -%}\n<warning>\nThe output of your last command was too long.\nPlease try a different command that produces less output.\nIf you're looking at a file you can try use head, tail or sed to view a smaller number of lines selectively.\nIf you're using grep or find and it produced too much output, you can use a more selective search pattern.\nIf you really need to see something from the full command's output, you can redirect output to a file and then search in that file.\n</warning>\n{%- set elided_chars = output.output | length - 10000 -%}\n<output_head>\n{{ output.output[:5000] }}\n</output_head>\n<elided_chars>\n{{ elided_chars }} characters elided\n</elided_chars>\n<output_tail>\n{{ output.output[-5000:] }}\n</output_tail>\n{%- endif -%}\n",
+        "action_regex": "```bash\\s*\\n(.*?)\\n```",
+        "step_limit": 100,
+        "cost_limit": 0.5,
+        "max_context_tokens": 0,
+        "enable_context": true,
+        "context_branch": "swebench-astropy__astropy-14995"
+      },
+      "model": {
+        "model_name": "openai/gpt-5-mini",
+        "model_kwargs": {
+          "drop_params": true,
+          "temperature": 0.0
+        },
+        "litellm_model_registry": null,
+        "set_cache_control": null,
+        "cost_tracking": "default"
+      },
+      "environment": {
+        "image": "docker.io/swebench/sweb.eval.x86_64.astropy_1776_astropy-14995:latest",
+        "cwd": "/testbed",
+        "env": {
+          "PAGER": "cat",
+          "MANPAGER": "cat",
+          "LESS": "-R",
+          "PIP_PROGRESS_BAR": "off",
+          "TQDM_DISABLE": "1"
+        },
+        "forward_env": [],
+        "timeout": 60,
+        "executable": "docker",
+        "run_args": [
+          "--rm"
+        ],
+        "container_timeout": "2h",
+        "pull_timeout": 120
+      },
+      "agent_type": "minisweagent_tool.agents.context_progress_agent.ContextProgressAgent",
+      "model_type": "minisweagent_tool.models.litellm_model.LitellmModel",
+      "environment_type": "minisweagent_tool.environments.docker.DockerEnvironment"
+    }
+  },
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a helpful assistant that can interact multiple times with a computer shell to solve programming tasks.\nYour response must contain exactly ONE bash code block with ONE command (or commands connected with && or ||).\n\nInclude a THOUGHT section before your command where you explain your reasoning process.\nFormat your response as shown in <format_example>.\n\n<format_example>\nTHOUGHT: Your reasoning and analysis here\n\n```bash\nyour_command_here\n```\n</format_example>\n\nFailure to follow these rules will cause your response to be rejected.\n\n\n## Context Management - TODO-Driven Workflow\n\nYou have a persistent context system that survives conversation truncation. **Follow this workflow strictly.**\n\n### \ud83c\udfaf Task Focus & Boundaries\n\n- **Primary goal:** Fix the specific bug / implement the behavior described in the task, nothing more.\n- **Only modify code that is directly required** to satisfy the task description or PR diff.\n- **Do NOT:**\n  - Refactor unrelated modules or error messages.\n  - Chase generic test infrastructure or environment issues unless the task explicitly asks.\n  - Introduce new features beyond what the task requires.\n- **When the minimal patch is implemented and sanity-checked, STOP and submit** instead of exploring additional improvements.\n\n### \u26a1 REQUIRED Workflow\n\n**STEP 1: ANALYZE & PLAN (First thing after receiving a task)**\n**CRITICAL: Check if TODOs already exist before creating new ones!**\n\n1. **First, check existing TODOs:**\n   ```\n   context_todos\n   ```\n   If TODOs already exist, use `context_summary` to see your current progress and continue from there. **DO NOT create duplicate TODOs.**\n\n2. **Only if no TODOs exist, create a detailed TODO list:**\n   ```\n   context_todos --add \"1. Analyze the codebase: find and read relevant files\"\n   context_todos --add \"2. Create a minimal script to reproduce the issue\"\n   context_todos --add \"3. Edit source code to resolve the issue\"\n   context_todos --add \"4. Verify fix works by running the reproduction script once\"\n   context_todos --add \"5. Submit immediately if verification passes\"\n   ```\n\n**Note:** The verification script should be MINIMAL - just enough to confirm the fix works. Do NOT test extensive edge cases unless the task explicitly requires it.\n\n**STEP 2: WORK ON EACH TODO**\nFor each TODO:\n1. **After each command**, log a summary of what you learned\n2. Log your findings and decisions\n3. When done, mark complete: `context_todos --complete N` (saves progress to context)\n\n**CRITICAL: Log in a SEPARATE step AFTER seeing output.**\n\nThe `context_log` command is intercepted before bash runs, so `$(...)` and `$VAR` will NOT be expanded.\n\n\u2717 **WRONG** - bash variables won't work:\n```bash\nresult=$(grep foo file.py) && context_log \"found: $result\"  # $result is literal text!\n```\n\n\u2713 **RIGHT** - run command first, then log separately:\n```bash\n# Step N: run command and see output\ngrep -n \"__getattr__\" astropy/coordinates/*.py\n```\nThen in your NEXT response, after seeing the output:\n```bash\n# Step N+1: log with actual values you observed\ncontext_log \"grep __getattr__: sky_coordinate.py:869,898 frame.py:234\"\n```\n\n**Always use literal values you saw in the output, never bash variables or substitutions.**\n\n**STEP 3: VERIFY & SUBMIT (Critical - Do This Once, Then STOP)**\nFollowing the recommended workflow, after implementing your fix:\n1. **Run your reproduction script ONCE** to verify the fix works (this is the script you created in STEP 1)\n2. **If verification passes, IMMEDIATELY submit ONCE** - do NOT:\n   - Run the script multiple times\n   - Create additional verification scripts\n   - Run echo/printf commands to \"confirm\" completion\n   - Test extensive edge cases (unless task explicitly requires)\n   - Add extra TODOs after the fix is done\n   - Run `context_summary` or other commands after submission\n3. **Use the exact submission command from the task instructions as a STANDALONE command** (typically `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && git diff --cached`)\n\n**CRITICAL: The submission command must be run ALONE, not combined with context commands!**\n\n\u2717 **WRONG** - Don't combine submission with context commands:\n```bash\ncontext_log \"...\" && context_todos --complete 5 && echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && git diff --cached\n```\n\n\u2713 **RIGHT** - Run submission as a standalone command:\n```bash\necho COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && git diff --cached\n```\n\n**If you need to mark TODOs complete or log before submitting, do that in a SEPARATE command first, then submit in the NEXT response.**\n\n**CRITICAL: Submission is FINAL - After you see the diff output, the task is COMPLETE. DO NOT:**\n- Submit again (you already submitted!)\n- Run any more commands\n- Check context_summary\n- Add more TODOs\n- Do anything else\n\n**When verification passes, submit ONCE. After you see the diff output, STOP - the task is done.**\n\n**STEP 4: RECOVER WHEN LOST**\nIf context was truncated and you feel lost:\n```\ncontext_summary\n```\nThis shows your TODOs, milestones, and recent activity.\n\n### Commands Reference\n\n| Command | Purpose |\n|---------|---------|\n| `context_todos` | View your TODO list |\n| `context_todos --add \"task\"` | Add a TODO (be specific!) |\n| `context_todos --complete N` | Mark TODO #N done (saves to context) |\n| `context_log \"message\"` | Log a finding, decision, or observation |\n| `context_commit --message \"...\"` | Manual checkpoint at a milestone |\n| `context_summary` | **Primary recovery command** - shows progress |\n\n### What to Log (Real Values From Output)\n\n**In a SEPARATE response after seeing command output, log what you found:**\n\n| After seeing... | In NEXT response, log... |\n|-----------------|--------------------------|\n| grep output | `context_log \"grep __getattr__: sky_coordinate.py:869,898 frame.py:234\"` |\n| file content | `context_log \"sky_coordinate.py:860-920: __getattr__ catches AttributeError at 898\"` |\n| error message | `context_log \"repro.py: AttributeError 'no attr prop' at line 898\"` |\n| test results | `context_log \"test_sky_coord.py: 47 passed, 2 failed\"` |\n\n**Also log key insights:**\n- `context_log \"Root cause: __getattr__ catches property's AttributeError, re-raises with wrong attr\"`\n- `context_log \"Fix: check class descriptors first, let their errors propagate\"`\n\n**NEVER use:** `$VAR`, `$(...)`, `${...}` - these won't be expanded!\n\n### TODO Guidelines (Be Specific!)\n\n**Good TODOs:**\n- \"Create a minimal script to reproduce the bug using SkyCoord subclass example from issue\"\n- \"Find __getattr__ method in sky_coordinate.py causing AttributeError\"\n- \"Update validators in django/contrib/auth/validators.py to use \\A...\\Z\"\n- \"Verify fix by running the reproduction script once\"\n\n**Bad TODOs:**\n- \"Fix the bug\" (too vague)\n- \"Look at code\" (not actionable)\n- \"Debug\" (not specific)\n- \"Improve generic error messages in unrelated modules\"\n- \"Clean up test infrastructure not mentioned in the task\"\n\n### Example Session (Each box = one response)\n\n```\n# Response 1: ALWAYS check if TODOs exist first\ncontext_todos\n```\n\n```\n# Response 2a: If TODOs exist, use context_summary to see progress\ncontext_summary\n```\n\n```\n# Response 2b: If NO TODOs exist, create TODO list\ncontext_todos --add \"1. Reproduce bug\" && context_todos --add \"2. Locate __getattr__\" && context_todos --add \"3. Fix\" && context_todos --add \"4. Test\"\n```\n\n```\n# Response 3: Run grep (just the command, no context_log yet)\ngrep -n \"__getattr__\" astropy/coordinates/*.py\n```\n\n```\n# Response 4: AFTER seeing grep output, log what you found with actual values\ncontext_log \"grep __getattr__: sky_coordinate.py:869,898,906 frame.py:234\"\n```\n\n```\n# Response 5: Read the file\nsed -n '860,920p' astropy/coordinates/sky_coordinate.py  \n```\n\n```\n# Response 6: AFTER seeing file content, log what you learned\ncontext_log \"sky_coordinate.py:869-920: __getattr__ catches AttributeError at 898, re-raises with wrong attr\"\n```\n\n```\n# Response 7: Run repro script\npython3 repro.py\n```\n\n```\n# Response 8: AFTER seeing error, log it and mark TODO complete\ncontext_log \"repro.py: AttributeError 'no attr prop' at line 898\" && context_todos --complete 1\n```\n\n```\n# Response 9: After fix is implemented, run the reproduction script ONCE to verify\npython3 repro_script.py\n```\n\n```\n# Response 10: If verification passes, mark final TODO complete (if needed) in a separate command\ncontext_todos --complete 5\n```\n\n```\n# Response 11: Submit as a STANDALONE command (do NOT combine with context commands)\necho COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && git diff --cached\n```\n\n**After Response 11: You see the diff output. The task is COMPLETE. DO NOT run any more commands.**\n\n```\n# If context truncated BEFORE submission, recover with:\ncontext_summary\n```\n\n### Remember\n- TODOs persist across context truncation - they're your roadmap\n- **ALWAYS check `context_todos` first** - if TODOs exist, use `context_summary` to see progress. **DO NOT create duplicate TODOs.**\n- Logs are your memory - be concise but capture key details\n- Completing a TODO = automatic context checkpoint (NOT a git commit)\n- When confused, `context_summary` is your friend\n- **NEVER run `git commit` before the final submission** - it will cause your patch to be empty\n- **After verification passes, submit ONCE** - do not run confirmation loops or extra checks\n- **One verification is enough** - if it works, submit. If it fails, fix and verify once more, then submit\n- **SUBMISSION IS FINAL** - After you see the diff output from the submission command, the task is COMPLETE. **DO NOT submit again or run any more commands.**\n",
+      "timestamp": 1764743126.186697
+    },
+    {
+      "role": "user",
+      "content": "<pr_description>\nConsider the following PR description:\nIn v5.3, NDDataRef mask propagation fails when one of the operand does not have a mask\n### Description\n\nThis applies to v5.3. \r\n\r\nIt looks like when one of the operand does not have a mask, the mask propagation when doing arithmetic, in particular with `handle_mask=np.bitwise_or` fails.  This is not a problem in v5.2.\r\n\r\nI don't know enough about how all that works, but it seems from the error that the operand without a mask is set as a mask of None's and then the bitwise_or tries to operate on an integer and a None and fails.\n\n### Expected behavior\n\nWhen one of the operand does not have mask, the mask that exists should just be copied over to the output.  Or whatever was done in that situation in v5.2 where there's no problem.\n\n### How to Reproduce\n\nThis is with v5.3.   With v5.2, there are no errors.\r\n\r\n```\r\n>>> import numpy as np\r\n>>> from astropy.nddata import NDDataRef\r\n\r\n>>> array = np.array([[0, 1, 0], [1, 0, 1], [0, 1, 0]])\r\n>>> mask = np.array([[0, 1, 64], [8, 0, 1], [2, 1, 0]])\r\n\r\n>>> nref_nomask = NDDataRef(array)\r\n>>> nref_mask = NDDataRef(array, mask=mask)\r\n\r\n# multiply no mask by constant (no mask * no mask)\r\n>>> nref_nomask.multiply(1., handle_mask=np.bitwise_or).mask   # returns nothing, no mask,  OK\r\n\r\n# multiply no mask by itself (no mask * no mask)\r\n>>> nref_nomask.multiply(nref_nomask, handle_mask=np.bitwise_or).mask # return nothing, no mask, OK\r\n\r\n# multiply mask by constant (mask * no mask)\r\n>>> nref_mask.multiply(1., handle_mask=np.bitwise_or).mask\r\n...\r\nTypeError: unsupported operand type(s) for |: 'int' and 'NoneType'\r\n\r\n# multiply mask by itself (mask * mask)\r\n>>> nref_mask.multiply(nref_mask, handle_mask=np.bitwise_or).mask\r\narray([[ 0,  1, 64],\r\n       [ 8,  0,  1],\r\n       [ 2,  1,  0]])\r\n\r\n# multiply mask by no mask (mask * no mask)\r\n>>> nref_mask.multiply(nref_nomask, handle_mask=np.bitwise_or).mask\r\n...\r\nTypeError: unsupported operand type(s) for |: 'int' and 'NoneType'\r\n```\r\n\n\n### Versions\n\n>>> import sys; print(\"Python\", sys.version)\r\nPython 3.10.11 | packaged by conda-forge | (main, May 10 2023, 19:07:22) [Clang 14.0.6 ]\r\n>>> import astropy; print(\"astropy\", astropy.__version__)\r\nastropy 5.3\r\n>>> import numpy; print(\"Numpy\", numpy.__version__)\r\nNumpy 1.24.3\r\n>>> import erfa; print(\"pyerfa\", erfa.__version__)\r\npyerfa 2.0.0.3\r\n>>> import scipy; print(\"Scipy\", scipy.__version__)\r\nScipy 1.10.1\r\n>>> import matplotlib; print(\"Matplotlib\", matplotlib.__version__)\r\nMatplotlib 3.7.1\r\n\n\n</pr_description>\n\n<instructions>\n# Task Instructions\n\n## Overview\nYou're a software engineer interacting continuously with a computer by submitting commands.\nYou'll be helping implement necessary changes to meet requirements in the PR description.\nYour task is specifically to make changes to non-test files in the current directory in order to fix the issue described in the PR description in a way that is general and consistent with the codebase.\n\nIMPORTANT: This is an interactive process where you will think and issue ONE command, see its result, then think and issue your next command.\n\nFor each response:\n1. Include a THOUGHT section explaining your reasoning and what you're trying to accomplish\n2. Provide exactly ONE bash command to execute\n\n## Important Boundaries\n- MODIFY: Regular source code files in /testbed (this is the working directory for all your subsequent commands)\n- DO NOT MODIFY: Tests, configuration files (pyproject.toml, setup.cfg, etc.)\n\n## Recommended Workflow\n1. Analyze the codebase by finding and reading relevant files\n2. Create a script to reproduce the issue\n3. Edit the source code to resolve the issue\n4. Verify your fix works by running your script again\n5. Test edge cases to ensure your fix is robust\n\n## Command Execution Rules\nYou are operating in an environment where\n1. You write a single command\n2. The system executes that command in a subshell\n3. You see the result\n4. You write your next command\n\nEach response should include:\n1. A **THOUGHT** section where you explain your reasoning and plan\n2. A single bash code block with your command\n\nFormat your responses like this:\n\n<format_example>\nTHOUGHT: Here I explain my reasoning process, analysis of the current situation,\nand what I'm trying to accomplish with the command below.\n\n```bash\nyour_command_here\n```\n</format_example>\n\nCommands must be specified in a single bash code block:\n\n```bash\nyour_command_here\n```\n\n**CRITICAL REQUIREMENTS:**\n- Your response SHOULD include a THOUGHT section explaining your reasoning\n- Your response MUST include EXACTLY ONE bash code block\n- This bash block MUST contain EXACTLY ONE command (or a set of commands connected with && or ||)\n- If you include zero or multiple bash blocks, or no command at all, YOUR RESPONSE WILL FAIL\n- Do NOT try to run multiple independent commands in separate blocks in one response\n- Directory or environment variable changes are not persistent. Every action is executed in a new subshell.\n- However, you can prefix any action with `MY_ENV_VAR=MY_VALUE cd /path/to/working/dir && ...` or write/load environment variables from files\n\nExample of a CORRECT response:\n<example_response>\nTHOUGHT: I need to understand the structure of the repository first. Let me check what files are in the current directory to get a better understanding of the codebase.\n\n```bash\nls -la\n```\n</example_response>\n\nExample of an INCORRECT response:\n<example_response>\nTHOUGHT: I need to examine the codebase and then look at a specific file. I'll run multiple commands to do this.\n\n```bash\nls -la\n```\n\nNow I'll read the file:\n\n```bash\ncat file.txt\n```\n</example_response>\n\nIf you need to run multiple commands, either:\n1. Combine them in one block using && or ||\n```bash\ncommand1 && command2 || echo \"Error occurred\"\n```\n\n2. Wait for the first command to complete, see its output, then issue the next command in your following response.\n\n## Environment Details\n- You have a full Linux shell environment\n- Always use non-interactive flags (-y, -f) for commands\n- Avoid interactive tools like vi, nano, or any that require user input\n- If a command isn't available, you can install it\n\n## Useful Command Examples\n\n### Create a new file:\n```bash\ncat <<'EOF' > newfile.py\nimport numpy as np\nhello = \"world\"\nprint(hello)\nEOF\n```\n\n### Edit files with sed:\n```bash\n# Replace all occurrences\nsed -i 's/old_string/new_string/g' filename.py\n\n# Replace only first occurrence\nsed -i 's/old_string/new_string/' filename.py\n\n# Replace first occurrence on line 1\nsed -i '1s/old_string/new_string/' filename.py\n\n# Replace all occurrences in lines 1-10\nsed -i '1,10s/old_string/new_string/g' filename.py\n```\n\n### View file content:\n```bash\n# View specific lines with numbers\nnl -ba filename.py | sed -n '10,20p'\n```\n\n### Any other command you want to run\n```bash\nanything\n```\n\n## Submission\nWhen you've completed your work (reading, editing, testing), and cannot make further progress\nissue exactly the following command:\n\n```bash\necho COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && git diff --cached\n```\n\nThis command will submit your work.\nYou cannot continue working (reading, editing, testing) in any way on this task after submitting.\n</instructions>",
+      "timestamp": 1764743126.1873071
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: Per the required workflow, first I must check for existing TODOs in the persistent context. I'll run the context_todos command to see if any TODOs exist so I don't create duplicates and can continue the guided process.\n\n```bash\ncontext_todos\n```",
+      "timestamp": 1764743134.524302,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-CiaaqiKOlscbP55Xf2eoxKf4li99f",
+          "created": 1764743132,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: Per the required workflow, first I must check for existing TODOs in the persistent context. I'll run the context_todos command to see if any TODOs exist so I don't create duplicates and can continue the guided process.\n\n```bash\ncontext_todos\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 129,
+            "prompt_tokens": 4167,
+            "total_tokens": 4296,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 64,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 1792,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\n## Current TODOs\n\n  1. [ ] Reproduce the bug with a minimal test case\n  2. [ ] Find the function causing the error (look in X module)\n  3. [ ] Understand why Y happens when Z is called\n  4. [ ] Implement fix by changing A to B\n  5. [ ] Test the fix with the original reproduction case</output>",
+      "timestamp": 1764743134.5290089
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: TODOs already exist; per workflow I should inspect the current progress using context_summary so I can continue from there. I'll run context_summary to see details of existing TODOs and logs.\n\n```bash\ncontext_summary\n```",
+      "timestamp": 1764743136.8349051,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-CiaasQvnWElVg8c0Ig1E1E26xi9by",
+          "created": 1764743134,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: TODOs already exist; per workflow I should inspect the current progress using context_summary so I can continue from there. I'll run context_summary to see details of existing TODOs and logs.\n\n```bash\ncontext_summary\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 57,
+            "prompt_tokens": 4330,
+            "total_tokens": 4387,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 0,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 1792,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\n# Context Recovery - swebench-astropy__astropy-14995\n\n**Task:** In v5.3, NDDataRef mask propagation fails when one of the operand does not have a mask\n\n## TODOs\n**Pending (5):**\n  1. Reproduce the bug with a minimal test case\n  2. Find the function causing the error (look in X module)\n  3. Understand why Y happens when Z is called\n  4. Implement fix by changing A to B\n  5. Test the fix with the original reproduction case\n\n## Recent Activity (1 entries)\n\n_Use `context_info --level session` for full log history._</output>",
+      "timestamp": 1764743136.842525
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: I need to explore the repository to find the NDData/NDDataRef implementation and reproduce the bug. First I'll list files at the top level to locate the testbed source and any astropy-like modules to inspect.\n\n```bash\nls -la\n```",
+      "timestamp": 1764743139.4719691,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-CiaavNoOpd2F2tRGGx1DMoLzZNguI",
+          "created": 1764743137,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: I need to explore the repository to find the NDData/NDDataRef implementation and reproduce the bug. First I'll list files at the top level to locate the testbed source and any astropy-like modules to inspect.\n\n```bash\nls -la\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 65,
+            "prompt_tokens": 4544,
+            "total_tokens": 4609,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 0,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 4096,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\ntotal 740\ndrwxrwxrwx  1 root root   4096 Sep 10 09:31 .\ndrwxr-xr-x  1 root root   4096 Dec  3 06:25 ..\n-rw-r--r--  1 root root      0 Sep 10 09:28 .astropy-root\ndrwxrwxrwx  2 root root   4096 Sep 10 09:28 .circleci\ndrwxrwxrwx  2 root root   4096 Sep 10 09:28 .devcontainer\ndrwxrwxrwx  8 root root   4096 Sep 10 09:32 .git\n-rw-r--r--  1 root root   1771 Sep 10 09:28 .git-blame-ignore-revs\n-rw-r--r--  1 root root     74 Sep 10 09:28 .gitattributes\ndrwxrwxrwx  4 root root   4096 Sep 10 09:28 .github\n-rw-r--r--  1 root root   1269 Sep 10 09:28 .gitignore\n-rw-r--r--  1 root root  21856 Sep 10 09:28 .mailmap\n-rw-r--r--  1 root root   3471 Sep 10 09:28 .pre-commit-config.yaml\ndrwxrwxrwx  3 root root   4096 Sep 10 09:28 .pyinstaller\n-rw-r--r--  1 root root    565 Sep 10 09:28 .readthedocs.yaml\n-rw-r--r--  1 root root  11077 Sep 10 09:28 .ruff.toml\n-rw-r--r--  1 root root 562861 Sep 10 09:28 CHANGES.rst\n-rw-r--r--  1 root root     66 Sep 10 09:28 CITATION\n-rw-r--r--  1 root root    139 Sep 10 09:28 CODE_OF_CONDUCT.md\n-rw-r--r--  1 root root   9569 Sep 10 09:28 CONTRIBUTING.md\n-rw-r--r--  1 root root    129 Sep 10 09:28 GOVERNANCE.md\n-rw-r--r--  1 root root   1496 Sep 10 09:28 LICENSE.rst\n-rw-r--r--  1 root root    178 Sep 10 09:28 MANIFEST.in\n-rw-r--r--  1 root root   5876 Sep 10 09:28 README.rst\ndrwxrwxrwx 23 root root   4096 Sep 10 09:32 astropy\ndrwxr-xr-x  2 root root   4096 Sep 10 09:31 astropy.egg-info\ndrwxrwxrwx  5 root root   4096 Sep 10 09:28 cextern\n-rw-r--r--  1 root root    244 Sep 10 09:28 codecov.yml\n-rw-r--r--  1 root root   2671 Sep 10 09:28 conftest.py\ndrwxrwxrwx 25 root root   4096 Sep 10 09:28 docs\ndrwxr-xr-x  5 root root   4096 Sep 10 09:28 examples\ndrwxrwxrwx  2 root root   4096 Sep 10 09:28 licenses\n-rw-r--r--  1 root root  10644 Sep 10 09:31 pyproject.toml\n-rw-r--r--  1 root root   5729 Sep 10 09:28 setup.cfg\n-rwxr-xr-x  1 root root   1647 Sep 10 09:28 setup.py\n-rw-r--r--  1 root root   6835 Sep 10 09:28 tox.ini\n</output>",
+      "timestamp": 1764743139.878914
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: I need to locate the NDDataRef implementation to inspect how mask propagation is handled. I'll search the repository for occurrences of \"NDDataRef\" to find the relevant file(s).\n\n```bash\ngrep -nR \"NDDataRef\" astropy || true\n```",
+      "timestamp": 1764743143.201866,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-CiaayXDS0EF7rGDYy64mEDyCEAef2",
+          "created": 1764743140,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: I need to locate the NDDataRef implementation to inspect how mask propagation is handled. I'll search the repository for occurrences of \"NDDataRef\" to find the relevant file(s).\n\n```bash\ngrep -nR \"NDDataRef\" astropy || true\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 131,
+            "prompt_tokens": 5529,
+            "total_tokens": 5660,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 64,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 4480,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\nastropy/nddata/mixins/tests/test_ndarithmetic.py:8:from astropy.nddata import NDDataRef\nastropy/nddata/mixins/tests/test_ndarithmetic.py:22:NDDataArithmetic = NDDataRef\nastropy/nddata/mixins/tests/test_ndio.py:1:from astropy.nddata import NDData, NDDataRef, NDIOMixin  # noqa: F401\nastropy/nddata/mixins/tests/test_ndio.py:4:NDDataIO = NDDataRef\nastropy/nddata/mixins/tests/test_ndslicing.py:19:# TODO: Make this use NDDataRef instead!\nastropy/nddata/mixins/ndslicing.py:54:    NDDataRef\nastropy/nddata/nddata_withmixins.py:13:__all__ = [\"NDDataRef\"]\nastropy/nddata/nddata_withmixins.py:16:class NDDataRef(NDArithmeticMixin, NDIOMixin, NDSlicingMixin, NDData):\nastropy/nddata/nddata_withmixins.py:40:        >>> from astropy.nddata import NDDataRef, StdDevUncertainty\nastropy/nddata/nddata_withmixins.py:44:        >>> ndd1 = NDDataRef(data, uncertainty=StdDevUncertainty(data))\nastropy/nddata/nddata_withmixins.py:45:        >>> ndd2 = NDDataRef(data, uncertainty=StdDevUncertainty(data))\nastropy/nddata/nddata.py:118:    NDDataRef\n</output>",
+      "timestamp": 1764743143.72474
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: I will open the NDArithmeticMixin implementation file to inspect how mask propagation is handled and find the bug location. I'll display the file to search for mask, handle_mask, or bitwise_or usage.\n\n```bash\nnl -ba astropy/nddata/mixins/ndarithmetic.py | sed -n '1,240p'\n```",
+      "timestamp": 1764743145.67733,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-Ciab2vBZEO8ChSSCaIZuvqyaMXhNQ",
+          "created": 1764743144,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: I will open the NDArithmeticMixin implementation file to inspect how mask propagation is handled and find the bug location. I'll display the file to search for mask, handle_mask, or bitwise_or usage.\n\n```bash\nnl -ba astropy/nddata/mixins/ndarithmetic.py | sed -n '1,240p'\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 82,
+            "prompt_tokens": 5953,
+            "total_tokens": 6035,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 0,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 4864,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<warning>\nThe output of your last command was too long.\nPlease try a different command that produces less output.\nIf you're looking at a file you can try use head, tail or sed to view a smaller number of lines selectively.\nIf you're using grep or find and it produced too much output, you can use a more selective search pattern.\nIf you really need to see something from the full command's output, you can redirect output to a file and then search in that file.\n</warning><output_head>\n     1\t# Licensed under a 3-clause BSD style license - see LICENSE.rst\n     2\t# This module implements the Arithmetic mixin to the NDData class.\n     3\t\n     4\timport warnings\n     5\tfrom copy import deepcopy\n     6\t\n     7\timport numpy as np\n     8\t\n     9\tfrom astropy.nddata.nduncertainty import NDUncertainty\n    10\tfrom astropy.units import dimensionless_unscaled\n    11\tfrom astropy.utils import format_doc, sharedmethod\n    12\tfrom astropy.utils.exceptions import AstropyUserWarning\n    13\tfrom astropy.utils.masked import Masked\n    14\t\n    15\t__all__ = [\"NDArithmeticMixin\"]\n    16\t\n    17\t# Global so it doesn't pollute the class dict unnecessarily:\n    18\t\n    19\t# Docstring templates for add, subtract, multiply, divide methods.\n    20\t_arit_doc = \"\"\"\n    21\t    Performs {name} by evaluating ``self`` {op} ``operand``.\n    22\t\n    23\t    Parameters\n    24\t    ----------\n    25\t    operand, operand2 : `NDData`-like instance\n    26\t        If ``operand2`` is ``None`` or not given it will perform the operation\n    27\t        ``self`` {op} ``operand``.\n    28\t        If ``operand2`` is given it will perform ``operand`` {op} ``operand2``.\n    29\t        If the method was called on a class rather than on the instance\n    30\t        ``operand2`` must be given.\n    31\t\n    32\t    propagate_uncertainties : `bool` or ``None``, optional\n    33\t        If ``None`` the result will have no uncertainty. If ``False`` the\n    34\t        result will have a copied version of the first operand that has an\n    35\t        uncertainty. If ``True`` the result will have a correctly propagated\n    36\t        uncertainty from the uncertainties of the operands but this assumes\n    37\t        that the uncertainties are `NDUncertainty`-like. Default is ``True``.\n    38\t\n    39\t        .. versionchanged:: 1.2\n    40\t            This parameter must be given as keyword-parameter. Using it as\n    41\t            positional parameter is deprecated.\n    42\t            ``None`` was added as valid parameter value.\n    43\t\n    44\t    handle_mask : callable, ``'first_found'`` or ``None``, optional\n    45\t        If ``None`` the result will have no mask. If ``'first_found'`` the\n    46\t        result will have a copied version of the first operand that has a\n    47\t        mask). If it is a callable then the specified callable must\n    48\t        create the results ``mask`` and if necessary provide a copy.\n    49\t        Default is `numpy.logical_or`.\n    50\t\n    51\t        .. versionadded:: 1.2\n    52\t\n    53\t    handle_meta : callable, ``'first_found'`` or ``None``, optional\n    54\t        If ``None`` the result will have no meta. If ``'first_found'`` the\n    55\t        result will have a copied version of the first operand that has a\n    56\t        (not empty) meta. If it is a callable then the specified callable must\n    57\t        create the results ``meta`` and if necessary provide a copy.\n    58\t        Default is ``None``.\n    59\t\n    60\t        .. versionadded:: 1.2\n    61\t\n    62\t    compare_wcs : callable, ``'first_found'`` or ``None``, optional\n    63\t        If ``None`` the result will have no wcs and no comparison between\n    64\t        the wcs of the operands is made. If ``'first_found'`` the\n    65\t        result will have a copied version of the first operand that has a\n    66\t        wcs. If it is a callable then the specified callable must\n    67\t        compare the ``wcs``. The resulting ``wcs`` will be like if ``False``\n    68\t        was given otherwise it raises a ``ValueError`` if the comparison was\n    69\t        not successful. Default is ``'first_found'``.\n    70\t\n    71\t        .. versionadded:: 1.2\n    72\t\n    73\t    uncertainty_correlation : number or `~numpy.ndarray`, optional\n    74\t        The correlation between the two operands is used for correct error\n    75\t        propagation for correlated data as given in:\n    76\t        https://en.wikipedia.org/wiki/Propagation_of_uncertainty#Example_formulas\n    77\t        Default is 0.\n    78\t\n    79\t        .. versionadded:: 1.2\n    80\t\n    81\t\n    82\t    kwargs :\n    83\t        Any other parameter that should be passed to the callables used.\n    84\t\n    85\t    Returns\n    86\t    -------\n    87\t    result : `~astropy.nddata.NDData`-like\n    88\t        The resulting dataset\n    89\t\n    90\t    Notes\n    91\t    -----\n    92\t    If a ``callable`` is used for ``mask``, ``wcs`` or ``meta`` the\n    93\t    callable must accept the corresponding attributes as first two\n    94\t    parameters. If the callable also needs additional parameters these can be\n    95\t    defined as ``kwargs`` and must start with ``\"wcs_\"`` (for wcs callable) or\n    96\t    ``\"meta_\"`` (for meta callable). This startstring is removed before the\n    97\t    callable is called.\n    98\t\n    99\t    ``\"first_found\"`` can also be abbreviated with ``\"ff\"``.\n   100\t    \"\"\"\n   101\t\n   102\t\n   103\tclass NDArithmeticMixin:\n   104\t    \"\"\"\n   105\t    Mixin class to add arithmetic to an NDData object.\n   106\t\n   107\t  \n</output_head>\n<elided_chars>\n1058 characters elided\n</elided_chars>\n<output_tail>\nUncertainty`-like\n   127\t    interface you can alter the ``propagate_uncertainties`` parameter in\n   128\t    :meth:`NDArithmeticMixin.add`. ``None`` means that the result will have no\n   129\t    uncertainty, ``False`` means it takes the uncertainty of the first operand\n   130\t    (if this does not exist from the second operand) as the result's\n   131\t    uncertainty. This behavior is also explained in the docstring for the\n   132\t    different arithmetic operations.\n   133\t\n   134\t    Decomposing the units is not attempted, mainly due to the internal mechanics\n   135\t    of `~astropy.units.Quantity`, so the resulting data might have units like\n   136\t    ``km/m`` if you divided for example 100km by 5m. So this Mixin has adopted\n   137\t    this behavior.\n   138\t\n   139\t    Examples\n   140\t    --------\n   141\t    Using this Mixin with `~astropy.nddata.NDData`:\n   142\t\n   143\t        >>> from astropy.nddata import NDData, NDArithmeticMixin\n   144\t        >>> class NDDataWithMath(NDArithmeticMixin, NDData):\n   145\t        ...     pass\n   146\t\n   147\t    Using it with one operand on an instance::\n   148\t\n   149\t        >>> ndd = NDDataWithMath(100)\n   150\t        >>> ndd.add(20)\n   151\t        NDDataWithMath(120)\n   152\t\n   153\t    Using it with two operand on an instance::\n   154\t\n   155\t        >>> ndd = NDDataWithMath(-4)\n   156\t        >>> ndd.divide(1, ndd)\n   157\t        NDDataWithMath(-0.25)\n   158\t\n   159\t    Using it as classmethod requires two operands::\n   160\t\n   161\t        >>> NDDataWithMath.subtract(5, 4)\n   162\t        NDDataWithMath(1)\n   163\t\n   164\t    \"\"\"\n   165\t\n   166\t    def _arithmetic(\n   167\t        self,\n   168\t        operation,\n   169\t        operand,\n   170\t        propagate_uncertainties=True,\n   171\t        handle_mask=np.logical_or,\n   172\t        handle_meta=None,\n   173\t        uncertainty_correlation=0,\n   174\t        compare_wcs=\"first_found\",\n   175\t        operation_ignores_mask=False,\n   176\t        axis=None,\n   177\t        **kwds,\n   178\t    ):\n   179\t        \"\"\"\n   180\t        Base method which calculates the result of the arithmetic operation.\n   181\t\n   182\t        This method determines the result of the arithmetic operation on the\n   183\t        ``data`` including their units and then forwards to other methods\n   184\t        to calculate the other properties for the result (like uncertainty).\n   185\t\n   186\t        Parameters\n   187\t        ----------\n   188\t        operation : callable\n   189\t            The operation that is performed on the `NDData`. Supported are\n   190\t            `numpy.add`, `numpy.subtract`, `numpy.multiply` and\n   191\t            `numpy.true_divide`.\n   192\t\n   193\t        operand : same type (class) as self\n   194\t            see :meth:`NDArithmeticMixin.add`\n   195\t\n   196\t        propagate_uncertainties : `bool` or ``None``, optional\n   197\t            see :meth:`NDArithmeticMixin.add`\n   198\t\n   199\t        handle_mask : callable, ``'first_found'`` or ``None``, optional\n   200\t            see :meth:`NDArithmeticMixin.add`\n   201\t\n   202\t        handle_meta : callable, ``'first_found'`` or ``None``, optional\n   203\t            see :meth:`NDArithmeticMixin.add`\n   204\t\n   205\t        compare_wcs : callable, ``'first_found'`` or ``None``, optional\n   206\t            see :meth:`NDArithmeticMixin.add`\n   207\t\n   208\t        uncertainty_correlation : ``Number`` or `~numpy.ndarray`, optional\n   209\t            see :meth:`NDArithmeticMixin.add`\n   210\t\n   211\t        operation_ignores_mask : bool, optional\n   212\t            When True, masked values will be excluded from operations;\n   213\t            otherwise the operation will be performed on all values,\n   214\t            including masked ones.\n   215\t\n   216\t        axis : int or tuple of ints, optional\n   217\t            axis or axes over which to perform collapse operations like min, max, sum or mean.\n   218\t\n   219\t        kwargs :\n   220\t            Any other parameter that should be passed to the\n   221\t            different :meth:`NDArithmeticMixin._arithmetic_mask` (or wcs, ...)\n   222\t            methods.\n   223\t\n   224\t        Returns\n   225\t        -------\n   226\t        result : ndarray or `~astropy.units.Quantity`\n   227\t            The resulting data as array (in case both operands were without\n   228\t            unit) or as quantity if at least one had a unit.\n   229\t\n   230\t        kwargs : `dict`\n   231\t            The kwargs should contain all the other attributes (besides data\n   232\t            and unit) needed to create a new instance for the result. Creating\n   233\t            the new instance is up to the calling method, for example\n   234\t            :meth:`NDArithmeticMixin.add`.\n   235\t\n   236\t        \"\"\"\n   237\t        # Find the appropriate keywords for the appropriate method (not sure\n   238\t        # if data and uncertainty are ever used ...)\n   239\t        kwds2 = {\"mask\": {}, \"meta\": {}, \"wcs\": {}, \"data\": {}, \"uncertainty\": {}}\n   240\t        for i in kwds:\n\n</output_tail>",
+      "timestamp": 1764743145.996421
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: I need to find where masks are processed in this file. I'll search for \"_arithmetic_mask\" and \"handle_mask\" usages to inspect how masks are combined and where None may be introduced.\n\n```bash\ngrep -nE \"_arithmetic_mask|handle_mask|mask\\s*=\" astropy/nddata/mixins/ndarithmetic.py || true\n```",
+      "timestamp": 1764743160.4822998,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-CiabG15xPIFo8G9CCkFqX5yCBtONa",
+          "created": 1764743158,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: I need to find where masks are processed in this file. I'll search for \"_arithmetic_mask\" and \"handle_mask\" usages to inspect how masks are combined and where None may be introduced.\n\n```bash\ngrep -nE \"_arithmetic_mask|handle_mask|mask\\s*=\" astropy/nddata/mixins/ndarithmetic.py || true\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 87,
+            "prompt_tokens": 8825,
+            "total_tokens": 8912,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 0,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 5888,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\n44:    handle_mask : callable, ``'first_found'`` or ``None``, optional\n171:        handle_mask=np.logical_or,\n175:        operation_ignores_mask=False,\n199:        handle_mask : callable, ``'first_found'`` or ``None``, optional\n221:            different :meth:`NDArithmeticMixin._arithmetic_mask` (or wcs, ...)\n273:                    masked_input = Masked(self.data << self.unit, mask=self.mask)\n275:                    masked_input = Masked(self.data, mask=self.mask)\n285:                    result, mask=np.zeros_like(result, dtype=bool)\n323:        if handle_mask is None:\n329:        elif handle_mask in [\"ff\", \"first_found\"]:\n335:            kwargs[\"mask\"] = self._arithmetic_mask(\n336:                operation, operand, handle_mask, axis=axis, **kwds2[\"mask\"]\n485:    def _arithmetic_mask(self, operation, operand, handle_mask, axis=None, **kwds):\n502:        handle_mask : callable\n506:            Additional parameters given to ``handle_mask``.\n513:            ``handle_mask`` must create (and copy) the returned mask.\n518:        ) or handle_mask is None:\n527:            return handle_mask(self.mask, operand.mask, **kwds)\n742:            # for collapse operations, use astropy.utils.masked rather than handle_mask\n</output>",
+      "timestamp": 1764743160.850295
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: I will display the portion of the file containing the _arithmetic_mask method to inspect how mask combinations handle None masks and where an operand without mask becomes None leading to TypeError. I'll show lines 440-780.\n\n```bash\nnl -ba astropy/nddata/mixins/ndarithmetic.py | sed -n '440,780p'\n```",
+      "timestamp": 1764743163.30028,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-CiabJfP1z5Dw5k8OJ7QAfMmAXNiq3",
+          "created": 1764743161,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: I will display the portion of the file containing the _arithmetic_mask method to inspect how mask combinations handle None masks and where an operand without mask becomes None leading to TypeError. I'll show lines 440-780.\n\n```bash\nnl -ba astropy/nddata/mixins/ndarithmetic.py | sed -n '440,780p'\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 86,
+            "prompt_tokens": 9222,
+            "total_tokens": 9308,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 0,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 7936,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<warning>\nThe output of your last command was too long.\nPlease try a different command that produces less output.\nIf you're looking at a file you can try use head, tail or sed to view a smaller number of lines selectively.\nIf you're using grep or find and it produced too much output, you can use a more selective search pattern.\nIf you really need to see something from the full command's output, you can redirect output to a file and then search in that file.\n</warning><output_head>\n   440\t            and not isinstance(operand.uncertainty, NDUncertainty)\n   441\t        ):\n   442\t            raise TypeError(\n   443\t                \"Uncertainty propagation is only defined for \"\n   444\t                \"subclasses of NDUncertainty.\"\n   445\t            )\n   446\t\n   447\t        # Now do the uncertainty propagation\n   448\t        # TODO: There is no enforced requirement that actually forbids the\n   449\t        # uncertainty to have negative entries but with correlation the\n   450\t        # sign of the uncertainty DOES matter.\n   451\t        if self.uncertainty is None and (\n   452\t            not hasattr(operand, \"uncertainty\") or operand.uncertainty is None\n   453\t        ):\n   454\t            # Neither has uncertainties so the result should have none.\n   455\t            return None\n   456\t        elif self.uncertainty is None:\n   457\t            # Create a temporary uncertainty to allow uncertainty propagation\n   458\t            # to yield the correct results. (issue #4152)\n   459\t            self.uncertainty = operand.uncertainty.__class__(None)\n   460\t            result_uncert = self.uncertainty.propagate(\n   461\t                operation, operand, result, correlation\n   462\t            )\n   463\t            # Delete the temporary uncertainty again.\n   464\t            self.uncertainty = None\n   465\t            return result_uncert\n   466\t\n   467\t        elif operand is not None and operand.uncertainty is None:\n   468\t            # As with self.uncertainty is None but the other way around.\n   469\t            operand.uncertainty = self.uncertainty.__class__(None)\n   470\t            result_uncert = self.uncertainty.propagate(\n   471\t                operation, operand, result, correlation\n   472\t            )\n   473\t            operand.uncertainty = None\n   474\t            return result_uncert\n   475\t\n   476\t        else:\n   477\t            # Both have uncertainties so just propagate.\n   478\t\n   479\t            # only supply the axis kwarg if one has been specified for a collapsing operation\n   480\t            axis_kwarg = dict(axis=kwds[\"axis\"]) if \"axis\" in kwds else dict()\n   481\t            return self.uncertainty.propagate(\n   482\t                operation, operand, result, correlation, **axis_kwarg\n   483\t            )\n   484\t\n   485\t    def _arithmetic_mask(self, operation, operand, handle_mask, axis=None, **kwds):\n   486\t        \"\"\"\n   487\t        Calculate the resulting mask.\n   488\t\n   489\t        This is implemented as the piecewise ``or`` operation if both have a\n   490\t        mask.\n   491\t\n   492\t        Parameters\n   493\t        ----------\n   494\t        operation : callable\n   495\t            see :meth:`NDArithmeticMixin._arithmetic` parameter description.\n   496\t            By default, the ``operation`` will be ignored.\n   497\t\n   498\t        operand : `NDData`-like instance\n   499\t            The second operand wrapped in an instance of the same class as\n   500\t            self.\n   501\t\n   502\t        handle_mask : callable\n   503\t            see :meth:`NDArithmeticMixin.add`\n   504\t\n   505\t        kwds :\n   506\t            Additional parameters given to ``handle_mask``.\n   507\t\n   508\t        Returns\n   509\t        -------\n   510\t        result_mask : any type\n   511\t            If only one mask was present this mask is returned.\n   512\t            If neither had a mask ``None`` is returned. Otherwise\n   513\t            ``handle_mask`` must create (and copy) the returned mask.\n   514\t        \"\"\"\n   515\t        # If only one mask is present we need not bother about any type checks\n   516\t        if (\n   517\t            self.mask is None and operand is not None and operand.mask is None\n   518\t        ) or handle_mask is None:\n   519\t            return None\n   520\t        elif self.mask is None and operand is not None:\n   521\t            # Make a copy so there is no reference in the result.\n   522\t            return deepcopy(operand.mask)\n   523\t        elif operand is None:\n   524\t            return deepcopy(self.mask)\n   525\t        else:\n   526\t            # Now lets calculate the resulting mask (operation enforces copy)\n   527\t            return handle_mask(self.mask, operand.mask, **kwds)\n   528\t\n   529\t    def _arithmetic_wcs(self, operation, operand, compare_wcs, **kwds):\n   530\t        \"\"\"\n   531\t        Calculate the resulting wcs.\n   532\t\n   533\t        There is actually no calculation involved but it is a good place to\n   534\t        compare wcs information of both operands. This is currently not working\n   535\t        properly with `~astropy.wcs.WCS` (which is the suggested class for\n   536\t        storing as wcs property) but it will not break it neither.\n   537\t\n   538\t        Parameters\n   539\t        ----------\n   540\t        operation : callable\n   541\t            see :meth:`NDArithmeticMixin._arithmetic` parameter description.\n   542\t            By default, the ``operation`` will be ignored.\n   543\t\n   544\t        operand : `NDData` instance or subclass\n   54\n</output_head>\n<elided_chars>\n4100 characters elided\n</elided_chars>\n<output_tail>\nided propagate_uncertainties if available, otherwise default is False:\n   648\t        propagate_uncertainties = kwargs.pop(\"propagate_uncertainties\", None)\n   649\t        return self._prepare_then_do_arithmetic(\n   650\t            np.max, propagate_uncertainties=propagate_uncertainties, **kwargs\n   651\t        )\n   652\t\n   653\t    @sharedmethod\n   654\t    def _prepare_then_do_arithmetic(\n   655\t        self_or_cls, operation, operand=None, operand2=None, **kwargs\n   656\t    ):\n   657\t        \"\"\"Intermediate method called by public arithmetic (i.e. ``add``)\n   658\t        before the processing method (``_arithmetic``) is invoked.\n   659\t\n   660\t        .. warning::\n   661\t            Do not override this method in subclasses.\n   662\t\n   663\t        This method checks if it was called as instance or as class method and\n   664\t        then wraps the operands and the result from ``_arithmetic`` in the\n   665\t        appropriate subclass.\n   666\t\n   667\t        Parameters\n   668\t        ----------\n   669\t        self_or_cls : instance or class\n   670\t            ``sharedmethod`` behaves like a normal method if called on the\n   671\t            instance (then this parameter is ``self``) but like a classmethod\n   672\t            when called on the class (then this parameter is ``cls``).\n   673\t\n   674\t        operations : callable\n   675\t            The operation (normally a numpy-ufunc) that represents the\n   676\t            appropriate action.\n   677\t\n   678\t        operand, operand2, kwargs :\n   679\t            See for example ``add``.\n   680\t\n   681\t        Result\n   682\t        ------\n   683\t        result : `~astropy.nddata.NDData`-like\n   684\t            Depending how this method was called either ``self_or_cls``\n   685\t            (called on class) or ``self_or_cls.__class__`` (called on instance)\n   686\t            is the NDData-subclass that is used as wrapper for the result.\n   687\t        \"\"\"\n   688\t        # DO NOT OVERRIDE THIS METHOD IN SUBCLASSES.\n   689\t\n   690\t        if isinstance(self_or_cls, NDArithmeticMixin):\n   691\t            # True means it was called on the instance, so self_or_cls is\n   692\t            # a reference to self\n   693\t            cls = self_or_cls.__class__\n   694\t            if operand2 is None:\n   695\t                # Only one operand was given. Set operand2 to operand and\n   696\t                # operand to self so that we call the appropriate method of the\n   697\t                # operand.\n   698\t                operand2 = operand\n   699\t                operand = self_or_cls\n   700\t            else:\n   701\t                # Convert the first operand to the class of this method.\n   702\t                # This is important so that always the correct _arithmetics is\n   703\t                # called later that method.\n   704\t                operand = cls(operand)\n   705\t\n   706\t        else:\n   707\t            # It was used as classmethod so self_or_cls represents the cls\n   708\t            cls = self_or_cls\n   709\t\n   710\t            # It was called on the class so we expect two operands!\n   711\t            if operand2 is None:\n   712\t                raise TypeError(\n   713\t                    \"operand2 must be given when the method isn't \"\n   714\t                    \"called on an instance.\"\n   715\t                )\n   716\t\n   717\t            # Convert to this class. See above comment why.\n   718\t            operand = cls(operand)\n   719\t\n   720\t        # At this point operand, operand2, kwargs and cls are determined.\n   721\t        if operand2 is not None and not issubclass(\n   722\t            operand2.__class__, NDArithmeticMixin\n   723\t        ):\n   724\t            # Let's try to convert operand2 to the class of operand to allow for\n   725\t            # arithmetic operations with numbers, lists, numpy arrays, numpy masked\n   726\t            # arrays, astropy quantities, masked quantities and of other subclasses\n   727\t            # of NDData.\n   728\t            operand2 = cls(operand2)\n   729\t\n   730\t            # Now call the _arithmetics method to do the arithmetic.\n   731\t            result, init_kwds = operand._arithmetic(operation, operand2, **kwargs)\n   732\t        elif issubclass(operand2.__class__, NDArithmeticMixin):\n   733\t            # calling as class method:\n   734\t            result, init_kwds = cls._arithmetic(\n   735\t                operand,\n   736\t                operation,\n   737\t                operand2,\n   738\t                **kwargs,\n   739\t            )\n   740\t        else:\n   741\t            # otherwise call the _arithmetic method on self for a collapse operation:\n   742\t            # for collapse operations, use astropy.utils.masked rather than handle_mask\n   743\t            result, init_kwds = self_or_cls._arithmetic(\n   744\t                operation,\n   745\t                operand2,\n   746\t                **kwargs,\n   747\t            )\n   748\t\n   749\t        # Return a new class based on the result\n   750\t        return cls(result, **init_kwds)\n\n</output_tail>",
+      "timestamp": 1764743163.5957491
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: I need to inspect how operands that are plain numbers (like 1.) are converted and how their mask attribute may become None or a mask of None values. I'll display lines around 240-320 where masked_input is used and masks are prepared.\n\n```bash\nnl -ba astropy/nddata/mixins/ndarithmetic.py | sed -n '240,320p'\n```",
+      "timestamp": 1764743176.329961,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-CiabSXIwOLBSE64V20XCE3eLpgueV",
+          "created": 1764743170,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: I need to inspect how operands that are plain numbers (like 1.) are converted and how their mask attribute may become None or a mask of None values. I'll display lines around 240-320 where masked_input is used and masks are prepared.\n\n```bash\nnl -ba astropy/nddata/mixins/ndarithmetic.py | sed -n '240,320p'\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 412,
+            "prompt_tokens": 11845,
+            "total_tokens": 12257,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 320,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 3840,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\n   240\t        for i in kwds:\n   241\t            splitted = i.split(\"_\", 1)\n   242\t            try:\n   243\t                kwds2[splitted[0]][splitted[1]] = kwds[i]\n   244\t            except KeyError:\n   245\t                raise KeyError(f\"Unknown prefix {splitted[0]} for parameter {i}\")\n   246\t\n   247\t        kwargs = {}\n   248\t\n   249\t        # First check that the WCS allows the arithmetic operation\n   250\t        if compare_wcs is None:\n   251\t            kwargs[\"wcs\"] = None\n   252\t        elif compare_wcs in [\"ff\", \"first_found\"]:\n   253\t            if self.wcs is None and hasattr(operand, \"wcs\"):\n   254\t                kwargs[\"wcs\"] = deepcopy(operand.wcs)\n   255\t            else:\n   256\t                kwargs[\"wcs\"] = deepcopy(self.wcs)\n   257\t        else:\n   258\t            kwargs[\"wcs\"] = self._arithmetic_wcs(\n   259\t                operation, operand, compare_wcs, **kwds2[\"wcs\"]\n   260\t            )\n   261\t\n   262\t        # collapse operations on masked quantities/arrays which are supported by\n   263\t        # the astropy.utils.masked or np.ma modules should use those modules to\n   264\t        # do the arithmetic on the data and propagate masks.\n   265\t        use_masked_arith = operand is None and self.mask is not None\n   266\t        if use_masked_arith:\n   267\t            # if we're *including* masked values in the operation,\n   268\t            # use the astropy Masked module:\n   269\t            if not operation_ignores_mask:\n   270\t                # call the numpy operation on a Masked NDDataArray\n   271\t                # representation of the nddata, with units when available:\n   272\t                if self.unit is not None and not hasattr(self.data, \"unit\"):\n   273\t                    masked_input = Masked(self.data << self.unit, mask=self.mask)\n   274\t                else:\n   275\t                    masked_input = Masked(self.data, mask=self.mask)\n   276\t            # if we're *excluding* masked values in the operation,\n   277\t            # we use the numpy.ma module:\n   278\t            else:\n   279\t                masked_input = np.ma.masked_array(self.data, self.mask)\n   280\t            result = operation(masked_input, axis=axis)\n   281\t            # since result may be e.g. a float if operation is a sum over all axes,\n   282\t            # let's ensure that result is a masked array, since we'll assume this later:\n   283\t            if not hasattr(result, \"mask\"):\n   284\t                result = np.ma.masked_array(\n   285\t                    result, mask=np.zeros_like(result, dtype=bool)\n   286\t                )\n   287\t        else:\n   288\t            # Then calculate the resulting data (which can but needs not be a\n   289\t            # quantity)\n   290\t            result = self._arithmetic_data(\n   291\t                operation, operand, axis=axis, **kwds2[\"data\"]\n   292\t            )\n   293\t\n   294\t        # preserve original units\n   295\t        if not hasattr(result, \"unit\") and hasattr(self, \"unit\"):\n   296\t            kwargs[\"unit\"] = self.unit\n   297\t\n   298\t        # Determine the other properties\n   299\t        if propagate_uncertainties is None:\n   300\t            kwargs[\"uncertainty\"] = None\n   301\t        elif not propagate_uncertainties:\n   302\t            if self.uncertainty is None:\n   303\t                kwargs[\"uncertainty\"] = deepcopy(operand.uncertainty)\n   304\t            else:\n   305\t                kwargs[\"uncertainty\"] = deepcopy(self.uncertainty)\n   306\t        else:\n   307\t            kwargs[\"uncertainty\"] = self._arithmetic_uncertainty(\n   308\t                operation,\n   309\t                operand,\n   310\t                result,\n   311\t                uncertainty_correlation,\n   312\t                axis=axis,\n   313\t                **kwds2[\"uncertainty\"],\n   314\t            )\n   315\t\n   316\t        # If both are None, there is nothing to do.\n   317\t        if self.psf is not None or (operand is not None and operand.psf is not None):\n   318\t            warnings.warn(\n   319\t                f\"Not setting psf attribute during {operation.__name__}.\",\n   320\t                AstropyUserWarning,\n</output>",
+      "timestamp": 1764743176.795991
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: I will create a minimal reproduction script based on the PR description to see the failing behavior with NDDataRef mask propagation in this codebase. This will help locate the exact failure and confirm the issue before editing source files.\n\n```bash\ncat <<'PY' > repro_nddata_mask.py\nimport numpy as np\nfrom astropy.nddata import NDDataRef\n\narray = np.array([[0, 1, 0], [1, 0, 1], [0, 1, 0]])\nmask = np.array([[0, 1, 64], [8, 0, 1], [2, 1, 0]])\n\nnref_nomask = NDDataRef(array)\nnref_mask = NDDataRef(array, mask=mask)\n\ndef attempt(msg, fn):\n    print(\"----\", msg)\n    try:\n        res = fn()\n        print(\"Result mask:\", res)\n    except Exception as e:\n        print(\"Raised:\", type(e).__name__, e)\n\nattempt(\"no mask * constant\", lambda: nref_nomask.multiply(1., handle_mask=np.bitwise_or).mask)\nattempt(\"no mask * no mask\", lambda: nref_nomask.multiply(nref_nomask, handle_mask=np.bitwise_or).mask)\nattempt(\"mask * constant\", lambda: nref_mask.multiply(1., handle_mask=np.bitwise_or).mask)\nattempt(\"mask * mask\", lambda: nref_mask.multiply(nref_mask, handle_mask=np.bitwise_or).mask)\nattempt(\"mask * no mask\", lambda: nref_mask.multiply(nref_nomask, handle_mask=np.bitwise_or).mask)\nPY\npython3 repro_nddata_mask.py\n```",
+      "timestamp": 1764743196.749046,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-CiabeqJWM3xyGObrkBZrKuXoPT1ae",
+          "created": 1764743182,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: I will create a minimal reproduction script based on the PR description to see the failing behavior with NDDataRef mask propagation in this codebase. This will help locate the exact failure and confirm the issue before editing source files.\n\n```bash\ncat <<'PY' > repro_nddata_mask.py\nimport numpy as np\nfrom astropy.nddata import NDDataRef\n\narray = np.array([[0, 1, 0], [1, 0, 1], [0, 1, 0]])\nmask = np.array([[0, 1, 64], [8, 0, 1], [2, 1, 0]])\n\nnref_nomask = NDDataRef(array)\nnref_mask = NDDataRef(array, mask=mask)\n\ndef attempt(msg, fn):\n    print(\"----\", msg)\n    try:\n        res = fn()\n        print(\"Result mask:\", res)\n    except Exception as e:\n        print(\"Raised:\", type(e).__name__, e)\n\nattempt(\"no mask * constant\", lambda: nref_nomask.multiply(1., handle_mask=np.bitwise_or).mask)\nattempt(\"no mask * no mask\", lambda: nref_nomask.multiply(nref_nomask, handle_mask=np.bitwise_or).mask)\nattempt(\"mask * constant\", lambda: nref_mask.multiply(1., handle_mask=np.bitwise_or).mask)\nattempt(\"mask * mask\", lambda: nref_mask.multiply(nref_mask, handle_mask=np.bitwise_or).mask)\nattempt(\"mask * no mask\", lambda: nref_mask.multiply(nref_nomask, handle_mask=np.bitwise_or).mask)\nPY\npython3 repro_nddata_mask.py\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 937,
+            "prompt_tokens": 12961,
+            "total_tokens": 13898,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 576,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 9088,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\n---- no mask * constant\nResult mask: None\n---- no mask * no mask\nResult mask: None\n---- mask * constant\nRaised: TypeError unsupported operand type(s) for |: 'int' and 'NoneType'\n---- mask * mask\nResult mask: [[ 0  1 64]\n [ 8  0  1]\n [ 2  1  0]]\n---- mask * no mask\nRaised: TypeError unsupported operand type(s) for |: 'int' and 'NoneType'\n</output>",
+      "timestamp": 1764743198.280907
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: I'll patch astropy/nddata/mixins/ndarithmetic.py to handle cases where one operand's mask is None by copying the existing mask instead of calling handle_mask with None (which causes the TypeError). Then I'll run the reproduction script to verify the fix.\n\n```bash\npython3 - <<'PY'\nfrom pathlib import Path\np=Path(\"astropy/nddata/mixins/ndarithmetic.py\")\ns=p.read_text()\nold_start=\"        # If only one mask is present we need not bother about any type checks\"\ni=s.find(old_start)\nif i==-1:\n    print(\"Marker not found\"); raise SystemExit(1)\n# find end of block: find the return handle_mask occurrence after i\nj=s.find(\"return handle_mask(self.mask, operand.mask, **kwds)\", i)\nif j==-1:\n    print(\"end not found\"); raise SystemExit(1)\n# find the end of the line containing that return\nendpos = s.find(\"\\n\", j) + 1\nold = s[i:endpos]\nnew = (\n\"        # If only one mask is present we need not bother about any type checks\\n\"\n\"        # If either operand or self has no mask, copy the existing mask instead of\\n\"\n\"        # calling handle_mask with a None. If both masks are None, return None.\\n\"\n\"        if handle_mask is None:\\n\"\n\"            return None\\n\"\n\"        if self.mask is None and (operand is None or getattr(operand, 'mask', None) is None):\\n\"\n\"            return None\\n\"\n\"        elif self.mask is None:\\n\"\n\"            # Make a copy so there is no reference in the result.\\n\"\n\"            return deepcopy(operand.mask)\\n\"\n\"        elif operand is None or getattr(operand, 'mask', None) is None:\\n\"\n\"            return deepcopy(self.mask)\\n\"\n\"        else:\\n\"\n\"            # Now lets calculate the resulting mask (operation enforces copy)\\n\"\n\"            return handle_mask(self.mask, operand.mask, **kwds)\\n\"\n)\ns2 = s[:i] + new + s[endpos:]\np.write_text(s2)\nprint('Patched ndarithmetic.py')\nPY\n&& python3 repro_nddata_mask.py\n```",
+      "timestamp": 1764743235.637898,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-CiabuYeh8nFgmWOnBQEjFDFX0aTC9",
+          "created": 1764743198,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: I'll patch astropy/nddata/mixins/ndarithmetic.py to handle cases where one operand's mask is None by copying the existing mask instead of calling handle_mask with None (which causes the TypeError). Then I'll run the reproduction script to verify the fix.\n\n```bash\npython3 - <<'PY'\nfrom pathlib import Path\np=Path(\"astropy/nddata/mixins/ndarithmetic.py\")\ns=p.read_text()\nold_start=\"        # If only one mask is present we need not bother about any type checks\"\ni=s.find(old_start)\nif i==-1:\n    print(\"Marker not found\"); raise SystemExit(1)\n# find end of block: find the return handle_mask occurrence after i\nj=s.find(\"return handle_mask(self.mask, operand.mask, **kwds)\", i)\nif j==-1:\n    print(\"end not found\"); raise SystemExit(1)\n# find the end of the line containing that return\nendpos = s.find(\"\\n\", j) + 1\nold = s[i:endpos]\nnew = (\n\"        # If only one mask is present we need not bother about any type checks\\n\"\n\"        # If either operand or self has no mask, copy the existing mask instead of\\n\"\n\"        # calling handle_mask with a None. If both masks are None, return None.\\n\"\n\"        if handle_mask is None:\\n\"\n\"            return None\\n\"\n\"        if self.mask is None and (operand is None or getattr(operand, 'mask', None) is None):\\n\"\n\"            return None\\n\"\n\"        elif self.mask is None:\\n\"\n\"            # Make a copy so there is no reference in the result.\\n\"\n\"            return deepcopy(operand.mask)\\n\"\n\"        elif operand is None or getattr(operand, 'mask', None) is None:\\n\"\n\"            return deepcopy(self.mask)\\n\"\n\"        else:\\n\"\n\"            # Now lets calculate the resulting mask (operation enforces copy)\\n\"\n\"            return handle_mask(self.mask, operand.mask, **kwds)\\n\"\n)\ns2 = s[:i] + new + s[endpos:]\np.write_text(s2)\nprint('Patched ndarithmetic.py')\nPY\n&& python3 repro_nddata_mask.py\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 2734,
+            "prompt_tokens": 13449,
+            "total_tokens": 16183,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 2240,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 12032,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>2</returncode>\n<output>\nPatched ndarithmetic.py\nbash: -c: line 37: syntax error near unexpected token `&&'\nbash: -c: line 37: `&& python3 repro_nddata_mask.py'\n</output>",
+      "timestamp": 1764743236.276622
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: I patched ndarithmetic.py to avoid calling handle_mask with None by explicitly checking for None masks and copying the existing mask when one operand lacks a mask. Now I'll run the reproduction script to verify the fix reproduces the expected behavior (mask copied when only one operand has a mask).\n\n```bash\npython3 repro_nddata_mask.py\n```",
+      "timestamp": 1764743247.090278,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-CiacWMOjhHMYGJT37FEFWX0pdK4Td",
+          "created": 1764743236,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: I patched ndarithmetic.py to avoid calling handle_mask with None by explicitly checking for None masks and copying the existing mask when one operand lacks a mask. Now I'll run the reproduction script to verify the fix reproduces the expected behavior (mask copied when only one operand has a mask).\n\n```bash\npython3 repro_nddata_mask.py\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 658,
+            "prompt_tokens": 14002,
+            "total_tokens": 14660,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 576,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 11136,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\n---- no mask * constant\nResult mask: None\n---- no mask * no mask\nResult mask: None\n---- mask * constant\nResult mask: [[ 0  1 64]\n [ 8  0  1]\n [ 2  1  0]]\n---- mask * mask\nResult mask: [[ 0  1 64]\n [ 8  0  1]\n [ 2  1  0]]\n---- mask * no mask\nResult mask: [[ 0  1 64]\n [ 8  0  1]\n [ 2  1  0]]\n</output>",
+      "timestamp": 1764743248.008173
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: The repro now shows correct behavior. I must log the findings and mark the first TODO complete, then continue through the TODOs per workflow. I'll log the reproduction result with context_log and mark TODO 1 complete.\n\n```bash\ncontext_log \"Repro script: mask*constant raised TypeError before patch; after patch mask is copied as expected\" && context_todos --complete 1\n```",
+      "timestamp": 1764743249.8882701,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-Ciaci9XWpMbpT3cB80FdNqNMW90Wl",
+          "created": 1764743248,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: The repro now shows correct behavior. I must log the findings and mark the first TODO complete, then continue through the TODOs per workflow. I'll log the reproduction result with context_log and mark TODO 1 complete.\n\n```bash\ncontext_log \"Repro script: mask*constant raised TypeError before patch; after patch mask is copied as expected\" && context_todos --complete 1\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 87,
+            "prompt_tokens": 14235,
+            "total_tokens": 14322,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 0,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 13056,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\n\u2713 Logged to context\n\u2713 Completed TODO #1: Reproduce the bug with a minimal test case</output>",
+      "timestamp": 1764743249.923105
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: I need to identify exactly where the problematic function lives so I can reference it in the TODO log. I'll search the ndarithmetic.py file for the _arithmetic_mask definition to confirm its location.\n\n```bash\ngrep -n \"_arithmetic_mask\" astropy/nddata/mixins/ndarithmetic.py || true\n```",
+      "timestamp": 1764743259.831146,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-CiackFhSN9o9CA0RGJNXx0SwgyDpW",
+          "created": 1764743250,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: I need to identify exactly where the problematic function lives so I can reference it in the TODO log. I'll search the ndarithmetic.py file for the _arithmetic_mask definition to confirm its location.\n\n```bash\ngrep -n \"_arithmetic_mask\" astropy/nddata/mixins/ndarithmetic.py || true\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 656,
+            "prompt_tokens": 14364,
+            "total_tokens": 15020,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 576,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 14208,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\n221:            different :meth:`NDArithmeticMixin._arithmetic_mask` (or wcs, ...)\n335:            kwargs[\"mask\"] = self._arithmetic_mask(\n485:    def _arithmetic_mask(self, operation, operand, handle_mask, axis=None, **kwds):\n</output>",
+      "timestamp": 1764743260.192609
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: I located the function responsible for mask handling. I'll log the exact location of _arithmetic_mask in the repository (using the line numbers observed) and mark TODO #2 as complete so we can proceed to understand the root cause and implement the fix (which I've already applied). \n\n```bash\ncontext_log \"Found _arithmetic_mask: astropy/nddata/mixins/ndarithmetic.py:485 (referenced at 221,335)\" && context_todos --complete 2\n```",
+      "timestamp": 1764743267.528233,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-CiacusZzhM8jWaBZctBGwu2F45bZP",
+          "created": 1764743260,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: I located the function responsible for mask handling. I'll log the exact location of _arithmetic_mask in the repository (using the line numbers observed) and mark TODO #2 as complete so we can proceed to understand the root cause and implement the fix (which I've already applied). \n\n```bash\ncontext_log \"Found _arithmetic_mask: astropy/nddata/mixins/ndarithmetic.py:485 (referenced at 221,335)\" && context_todos --complete 2\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 434,
+            "prompt_tokens": 14519,
+            "total_tokens": 14953,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 320,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 13056,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\n\u2713 Logged to context\n\u2713 Completed TODO #2: Find the function causing the error (look in X module)</output>",
+      "timestamp": 1764743267.543096
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: I will log the root cause discovered: _arithmetic_mask called the provided handle_mask with a None mask leading to TypeError when using bitwise_or. Then mark TODO #3 complete so we can proceed.\n\n```bash\ncontext_log \"Root cause: _arithmetic_mask called handle_mask(self.mask, operand.mask) even when one mask was None; bitwise_or fails on int|None. Fix: explicitly handle None masks by copying existing mask or returning None.\" && context_todos --complete 3\n```",
+      "timestamp": 1764743272.782071,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-Ciad18ZTF4YHc7RnQnT9aEOSZwalP",
+          "created": 1764743267,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: I will log the root cause discovered: _arithmetic_mask called the provided handle_mask with a None mask leading to TypeError when using bitwise_or. Then mark TODO #3 complete so we can proceed.\n\n```bash\ncontext_log \"Root cause: _arithmetic_mask called handle_mask(self.mask, operand.mask) even when one mask was None; bitwise_or fails on int|None. Fix: explicitly handle None masks by copying existing mask or returning None.\" && context_todos --complete 3\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 309,
+            "prompt_tokens": 14671,
+            "total_tokens": 14980,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 192,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 14208,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\n\u2713 Logged to context\n\u2713 Completed TODO #3: Understand why Y happens when Z is called</output>",
+      "timestamp": 1764743272.820559
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: I've already implemented the minimal code change to handle None masks (copy existing mask instead of calling handle_mask with None). I'll log that I implemented the fix and mark TODO #4 complete.\n\n```bash\ncontext_log \"Implement fix: change _arithmetic_mask to copy existing mask when the other is None, and guard handle_mask None case.\" && context_todos --complete 4\n```",
+      "timestamp": 1764743274.8675141,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-Ciad7Q9rFHKXF24eKtvQ9EyD0W5qF",
+          "created": 1764743273,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: I've already implemented the minimal code change to handle None masks (copy existing mask instead of calling handle_mask with None). I'll log that I implemented the fix and mark TODO #4 complete.\n\n```bash\ncontext_log \"Implement fix: change _arithmetic_mask to copy existing mask when the other is None, and guard handle_mask None case.\" && context_todos --complete 4\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 85,
+            "prompt_tokens": 14823,
+            "total_tokens": 14908,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 0,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 14080,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\n\u2713 Logged to context\n\u2713 Completed TODO #4: Implement fix by changing A to B</output>",
+      "timestamp": 1764743274.895953
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: I will record that the reproduction now passes (the mask is copied when one operand lacks a mask) and mark the final TODO as complete so I can proceed to submission in the next step.\n\n```bash\ncontext_log \"Verification: repro_nddata_mask.py now shows mask*constant and mask*no mask return the copied mask ([[0,1,64],[8,0,1],[2,1,0]]) and no TypeError\" && context_todos --complete 5\n```",
+      "timestamp": 1764743287.214657,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-CiadEgAluhuNRokGRrKlVBYjhCImW",
+          "created": 1764743280,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: I will record that the reproduction now passes (the mask is copied when one operand lacks a mask) and mark the final TODO as complete so I can proceed to submission in the next step.\n\n```bash\ncontext_log \"Verification: repro_nddata_mask.py now shows mask*constant and mask*no mask return the copied mask ([[0,1,64],[8,0,1],[2,1,0]]) and no TypeError\" && context_todos --complete 5\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 432,
+            "prompt_tokens": 14948,
+            "total_tokens": 15380,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 320,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 14208,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\n\u2713 Logged to context\n\u2713 Completed TODO #5: Test the fix with the original reproduction case</output>",
+      "timestamp": 1764743287.2438369
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: All TODOs are complete and the fix is implemented and verified. Now I will submit the changes by staging and showing the git diff as required. This submission command must be run alone.\n\n```bash\necho COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && git diff --cached\n```",
+      "timestamp": 1764743289.7866602,
+      "extra": {
+        "response": {
+          "id": "chatcmpl-CiadLa37Xc5QBJdlIxsDlQtWbaBV4",
+          "created": 1764743287,
+          "model": "gpt-5-mini-2025-08-07",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "THOUGHT: All TODOs are complete and the fix is implemented and verified. Now I will submit the changes by staging and showing the git diff as required. This submission command must be run alone.\n\n```bash\necho COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && git diff --cached\n```",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null,
+                "provider_specific_fields": {
+                  "refusal": null
+                },
+                "annotations": []
+              },
+              "provider_specific_fields": {}
+            }
+          ],
+          "usage": {
+            "completion_tokens": 67,
+            "prompt_tokens": 15095,
+            "total_tokens": 15162,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": 0,
+              "audio_tokens": 0,
+              "reasoning_tokens": 0,
+              "rejected_prediction_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": 0,
+              "cached_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null
+            }
+          },
+          "service_tier": "default"
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": "diff --git a/astropy/nddata/mixins/ndarithmetic.py b/astropy/nddata/mixins/ndarithmetic.py\nindex 4153dfccb..09a88c38a 100644\n--- a/astropy/nddata/mixins/ndarithmetic.py\n+++ b/astropy/nddata/mixins/ndarithmetic.py\n@@ -513,14 +513,16 @@ class NDArithmeticMixin:\n             ``handle_mask`` must create (and copy) the returned mask.\n         \"\"\"\n         # If only one mask is present we need not bother about any type checks\n-        if (\n-            self.mask is None and operand is not None and operand.mask is None\n-        ) or handle_mask is None:\n+        # If either operand or self has no mask, copy the existing mask instead of\n+        # calling handle_mask with a None. If both masks are None, return None.\n+        if handle_mask is None:\n+            return None\n+        if self.mask is None and (operand is None or getattr(operand, 'mask', None) is None):\n             return None\n-        elif self.mask is None and operand is not None:\n+        elif self.mask is None:\n             # Make a copy so there is no reference in the result.\n             return deepcopy(operand.mask)\n-        elif operand is None:\n+        elif operand is None or getattr(operand, 'mask', None) is None:\n             return deepcopy(self.mask)\n         else:\n             # Now lets calculate the resulting mask (operation enforces copy)\ndiff --git a/repro_nddata_mask.py b/repro_nddata_mask.py\nnew file mode 100644\nindex 000000000..5db169196\n--- /dev/null\n+++ b/repro_nddata_mask.py\n@@ -0,0 +1,22 @@\n+import numpy as np\n+from astropy.nddata import NDDataRef\n+\n+array = np.array([[0, 1, 0], [1, 0, 1], [0, 1, 0]])\n+mask = np.array([[0, 1, 64], [8, 0, 1], [2, 1, 0]])\n+\n+nref_nomask = NDDataRef(array)\n+nref_mask = NDDataRef(array, mask=mask)\n+\n+def attempt(msg, fn):\n+    print(\"----\", msg)\n+    try:\n+        res = fn()\n+        print(\"Result mask:\", res)\n+    except Exception as e:\n+        print(\"Raised:\", type(e).__name__, e)\n+\n+attempt(\"no mask * constant\", lambda: nref_nomask.multiply(1., handle_mask=np.bitwise_or).mask)\n+attempt(\"no mask * no mask\", lambda: nref_nomask.multiply(nref_nomask, handle_mask=np.bitwise_or).mask)\n+attempt(\"mask * constant\", lambda: nref_mask.multiply(1., handle_mask=np.bitwise_or).mask)\n+attempt(\"mask * mask\", lambda: nref_mask.multiply(nref_mask, handle_mask=np.bitwise_or).mask)\n+attempt(\"mask * no mask\", lambda: nref_mask.multiply(nref_nomask, handle_mask=np.bitwise_or).mask)\n",
+      "timestamp": 1764743291.176312
+    }
+  ],
+  "trajectory_format": "mini-swe-agent-1",
+  "instance_id": "astropy__astropy-14995"
+}
