@@ -20,6 +20,8 @@ from rich.live import Live
 
 from minisweagent import Environment
 from minisweagent.agents.default import DefaultAgent
+from minisweagent.agents.context_progress_agent import ContextProgressAgent
+from minisweagent.agents.context_manager_adapter import get_context_manager
 from minisweagent.config import builtin_config_dir, get_config_path
 from minisweagent.environments import get_environment
 from minisweagent.models import get_model
@@ -142,13 +144,33 @@ def process_instance(
 
     try:
         env = get_sb_environment(config, instance)
-        agent = ProgressTrackingAgent(
-            model,
-            env,
-            progress_manager=progress_manager,
-            instance_id=instance_id,
-            **config.get("agent", {}),
-        )
+        # Get context manager if enabled
+        agent_config = config.get("agent", {})
+        enable_context = agent_config.get("enable_context", False)
+        context_manager = get_context_manager(enable=enable_context)
+        
+        # Use ContextProgressAgent if context enabled, otherwise ProgressTrackingAgent
+        if context_manager:
+            agent = ContextProgressAgent(
+                model,
+                env,
+                progress_manager=progress_manager,
+                instance_id=instance_id,
+                context_manager=context_manager,
+                # Don't set context_branch - let LM create branches for major approach changes
+                **agent_config,
+            )
+        else:
+            # Filter out context-specific config keys for ProgressTrackingAgent
+            filtered_config = {k: v for k, v in agent_config.items() 
+                             if k not in ["enable_context", "context_branch"]}
+            agent = ProgressTrackingAgent(
+                model,
+                env,
+                progress_manager=progress_manager,
+                instance_id=instance_id,
+                **filtered_config,
+            )
         exit_status, result = agent.run(task)
     except Exception as e:
         logger.error(f"Error processing instance {instance_id}: {e}", exc_info=True)
