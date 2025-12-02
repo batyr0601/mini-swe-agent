@@ -479,9 +479,9 @@ def summary_command() -> str:
     lines.append(f"# Context Recovery - {current_branch}")
     lines.append("")
     
-    # Branch purpose / task (first line)
+    # Branch purpose / task (first line) - show full, no truncation
     if commits:
-        lines.append(f"**Task:** {commits[0].branch_purpose[:200]}")
+        lines.append(f"**Task:** {commits[0].branch_purpose}")
         lines.append("")
     
     # TODOs - MOST IMPORTANT for recovery
@@ -516,7 +516,9 @@ def summary_command() -> str:
             
             if completed:
                 lines.append(f"\n**Completed ({len(completed)}):**")
-                for todo in completed[-3:]:  # Show last 3 completed
+                # Show all completed TODOs for full context (or last 15 if many)
+                todos_to_show = completed[-15:] if len(completed) > 15 else completed
+                for todo in todos_to_show:
                     lines.append(f"  ✓ {todo}")
             lines.append("")
     except Exception:
@@ -524,13 +526,14 @@ def summary_command() -> str:
         lines.append("Could not read TODOs. Use `context_todos` to view them.")
         lines.append("")
     
-    # Key milestones (commits) - show last 3 with short summaries
+    # Key milestones (commits) - show last 10 with full text, no truncation
     if commits and len(commits) > 1:  # Skip if only initial commit
         lines.append("## Milestones Achieved")
-        for c in commits[-3:]:
-            summary = c.commit_contribution.split('\n')[0][:80]
-            if len(c.commit_contribution) > 80:
-                summary += "..."
+        # Show last 10 commits (or all if less) for better recovery context
+        commits_to_show = commits[-10:] if len(commits) > 10 else commits[1:]  # Skip initial commit
+        for c in commits_to_show:
+            # Show first line of commit message fully - no truncation
+            summary = c.commit_contribution.split('\n')[0]
             lines.append(f"  • {summary}")
         lines.append("")
     
@@ -538,8 +541,8 @@ def summary_command() -> str:
     if logs:
         lines.append(f"## Recent Activity ({len(logs)} entries)")
         
-        # Show last 8 log entries, categorized
-        recent_logs = logs[-8:]
+        # Show last 25 log entries for much better recovery context
+        recent_logs = logs[-25:] if len(logs) > 25 else logs
         actions = []
         results = []
         findings = []
@@ -547,20 +550,25 @@ def summary_command() -> str:
         for log in recent_logs:
             entry = log.reasoning_step
             if entry.startswith("ACTION:"):
-                actions.append(entry[7:].strip()[:60])
+                # Show full action - no truncation
+                actions.append(entry[7:].strip())
             elif entry.startswith("RESULT:"):
-                results.append(entry[7:].strip()[:60])
-            elif any(kw in entry.lower() for kw in ['found', 'discovered', 'located', 'bug', 'error']):
-                findings.append(entry[:80])
+                # Show full result - no truncation
+                results.append(entry[7:].strip())
+            elif any(kw in entry.lower() for kw in ['found', 'discovered', 'located', 'bug', 'error', 'fix', 'updated', 'changed', 'completed', 'verified']):
+                # Show full finding - no truncation
+                findings.append(entry)
         
         if findings:
             lines.append("**Key Findings:**")
-            for f in findings[-3:]:
+            # Show last 10 findings for better context
+            for f in findings[-10:]:
                 lines.append(f"  • {f}")
         
         if actions:
             lines.append("**Recent Actions:**")
-            for a in actions[-3:]:
+            # Show last 10 actions for better context
+            for a in actions[-10:]:
                 lines.append(f"  • {a}")
         
         lines.append("")

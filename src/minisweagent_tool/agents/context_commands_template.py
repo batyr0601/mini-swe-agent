@@ -17,17 +17,37 @@ CONTEXT_COMMANDS_TEMPLATE = """
 
 You have a persistent context system that survives conversation truncation. **Follow this workflow strictly.**
 
+### 🎯 Task Focus & Boundaries
+
+- **Primary goal:** Fix the specific bug / implement the behavior described in the task, nothing more.
+- **Only modify code that is directly required** to satisfy the task description or PR diff.
+- **Do NOT:**
+  - Refactor unrelated modules or error messages.
+  - Chase generic test infrastructure or environment issues unless the task explicitly asks.
+  - Introduce new features beyond what the task requires.
+- **When the minimal patch is implemented and sanity-checked, STOP and submit** instead of exploring additional improvements.
+
 ### ⚡ REQUIRED Workflow
 
 **STEP 1: ANALYZE & PLAN (First thing after receiving a task)**
-Before writing any code, create a detailed TODO list:
-```
-context_todos --add "1. Understand the bug: [specific description of what to investigate]"
-context_todos --add "2. Locate the code: [specific files/functions to find]"
-context_todos --add "3. Root cause analysis: [what to analyze]"
-context_todos --add "4. Implement fix: [specific changes to make]"
-context_todos --add "5. Verify fix: [how to test the fix]"
-```
+**CRITICAL: Check if TODOs already exist before creating new ones!**
+
+1. **First, check existing TODOs:**
+   ```
+   context_todos
+   ```
+   If TODOs already exist, use `context_summary` to see your current progress and continue from there. **DO NOT create duplicate TODOs.**
+
+2. **Only if no TODOs exist, create a detailed TODO list:**
+   ```
+   context_todos --add "1. Analyze the codebase: find and read relevant files"
+   context_todos --add "2. Create a minimal script to reproduce the issue"
+   context_todos --add "3. Edit source code to resolve the issue"
+   context_todos --add "4. Verify fix works by running the reproduction script once"
+   context_todos --add "5. Submit immediately if verification passes"
+   ```
+
+**Note:** The verification script should be MINIMAL - just enough to confirm the fix works. Do NOT test extensive edge cases unless the task explicitly requires it.
 
 **STEP 2: WORK ON EACH TODO**
 For each TODO:
@@ -57,7 +77,20 @@ context_log "grep __getattr__: sky_coordinate.py:869,898 frame.py:234"
 
 **Always use literal values you saw in the output, never bash variables or substitutions.**
 
-**STEP 3: RECOVER WHEN LOST**
+**STEP 3: VERIFY & SUBMIT (Critical - Do This Immediately After Fix)**
+Following the recommended workflow, after implementing your fix:
+1. **Run your reproduction script ONCE** to verify the fix works (this is the script you created in STEP 1)
+2. **If verification passes, IMMEDIATELY submit** - do NOT:
+   - Run the script multiple times
+   - Create additional verification scripts
+   - Run echo/printf commands to "confirm" completion
+   - Test extensive edge cases (unless task explicitly requires)
+   - Add extra TODOs after the fix is done
+3. **Use the exact submission command from the task instructions** (typically `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && git diff --cached`)
+
+**When verification passes, SUBMIT IMMEDIATELY. One successful verification is sufficient.**
+
+**STEP 4: RECOVER WHEN LOST**
 If context was truncated and you feel lost:
 ```
 context_summary
@@ -95,51 +128,73 @@ This shows your TODOs, milestones, and recent activity.
 ### TODO Guidelines (Be Specific!)
 
 **Good TODOs:**
-- "Reproduce the bug using SkyCoord subclass example from issue"
+- "Create a minimal script to reproduce the bug using SkyCoord subclass example from issue"
 - "Find __getattr__ method in sky_coordinate.py causing AttributeError"
-- "Fix error message to show actual missing attribute name"
-- "Test fix with provided test case"
+- "Update validators in django/contrib/auth/validators.py to use \\A...\\Z"
+- "Verify fix by running the reproduction script once"
 
 **Bad TODOs:**
 - "Fix the bug" (too vague)
 - "Look at code" (not actionable)
 - "Debug" (not specific)
+- "Improve generic error messages in unrelated modules"
+- "Clean up test infrastructure not mentioned in the task"
 
 ### Example Session (Each box = one response)
 
 ```
-# Response 1: Create TODO list
+# Response 1: ALWAYS check if TODOs exist first
+context_todos
+```
+
+```
+# Response 2a: If TODOs exist, use context_summary to see progress
+context_summary
+```
+
+```
+# Response 2b: If NO TODOs exist, create TODO list
 context_todos --add "1. Reproduce bug" && context_todos --add "2. Locate __getattr__" && context_todos --add "3. Fix" && context_todos --add "4. Test"
 ```
 
 ```
-# Response 2: Run grep (just the command, no context_log yet)
+# Response 3: Run grep (just the command, no context_log yet)
 grep -n "__getattr__" astropy/coordinates/*.py
 ```
 
 ```
-# Response 3: AFTER seeing grep output, log what you found with actual values
+# Response 4: AFTER seeing grep output, log what you found with actual values
 context_log "grep __getattr__: sky_coordinate.py:869,898,906 frame.py:234"
 ```
 
 ```
-# Response 4: Read the file
+# Response 5: Read the file
 sed -n '860,920p' astropy/coordinates/sky_coordinate.py  
 ```
 
 ```
-# Response 5: AFTER seeing file content, log what you learned
+# Response 6: AFTER seeing file content, log what you learned
 context_log "sky_coordinate.py:869-920: __getattr__ catches AttributeError at 898, re-raises with wrong attr"
 ```
 
 ```
-# Response 6: Run repro script
+# Response 7: Run repro script
 python3 repro.py
 ```
 
 ```
-# Response 7: AFTER seeing error, log it and mark TODO complete
+# Response 8: AFTER seeing error, log it and mark TODO complete
 context_log "repro.py: AttributeError 'no attr prop' at line 898" && context_todos --complete 1
+```
+
+```
+# Response 9: After fix is implemented, run the reproduction script ONCE to verify
+python3 repro_script.py
+```
+
+```
+# Response 10: If verification passes, SUBMIT IMMEDIATELY (do NOT run script again or add confirmations)
+echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && git diff --cached
 ```
 
 ```
@@ -149,8 +204,11 @@ context_summary
 
 ### Remember
 - TODOs persist across context truncation - they're your roadmap
+- **ALWAYS check `context_todos` first** - if TODOs exist, use `context_summary` to see progress. **DO NOT create duplicate TODOs.**
 - Logs are your memory - be concise but capture key details
 - Completing a TODO = automatic context checkpoint (NOT a git commit)
 - When confused, `context_summary` is your friend
 - **NEVER run `git commit` before the final submission** - it will cause your patch to be empty
+- **After verification passes, SUBMIT IMMEDIATELY** - do not run confirmation loops or extra checks
+- **One verification is enough** - if it works, submit. If it fails, fix and verify once more, then submit
 """

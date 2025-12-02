@@ -148,6 +148,11 @@ def process_instance(
         agent_config = config.get("agent", {})
         enable_context = agent_config.get("enable_context", False)
         instance_dir.mkdir(parents=True, exist_ok=True)
+        # Delete .context directory if it exists to start fresh
+        context_dir = instance_dir / ".context"
+        if context_dir.exists():
+            import shutil
+            shutil.rmtree(context_dir)
         context_manager = get_context_manager(enable=enable_context, workspace_path=str(instance_dir))
         
         # Use ContextProgressAgent if context enabled, otherwise ProgressTrackingAgent
