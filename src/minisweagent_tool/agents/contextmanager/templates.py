@@ -7,13 +7,24 @@ def get_main_md_template() -> str:
 
 <!-- High-level description of the project's purpose and objectives -->
 
-## Key Milestones
-
-<!-- Track major milestones and achievements -->
-
 ## TODO List
 
-<!-- Shared TODO items across all branches -->
+<!-- 
+Add detailed, specific TODOs when starting a task. Good examples:
+- [ ] Reproduce the bug with a minimal test case
+- [ ] Find the function causing the error (look in X module)
+- [ ] Understand why Y happens when Z is called
+- [ ] Implement fix by changing A to B
+- [ ] Test the fix with the original reproduction case
+-->
+
+## Key Milestones
+
+<!-- Auto-populated when TODOs are completed -->
+
+## Interaction Log
+
+<!-- Recent agent actions and results are summarized here -->
 
 """
 

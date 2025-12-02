@@ -14,6 +14,79 @@ class ContextAwareAgentConfig(AgentConfig):
     context_branch: str | None = None  # Auto-generated if None
 
 
+def _truncate_message(content: str, max_length: int = 200) -> str:
+    """Truncate a message for logging, keeping it informative but concise."""
+    if not content:
+        return "(empty)"
+    
+    # Remove excessive whitespace
+    content = ' '.join(content.split())
+    
+    if len(content) <= max_length:
+        return content
+    
+    # Try to truncate at a sentence boundary
+    truncated = content[:max_length]
+    last_period = truncated.rfind('.')
+    last_newline = truncated.rfind('\n')
+    
+    cut_point = max(last_period, last_newline)
+    if cut_point > max_length // 2:
+        return truncated[:cut_point + 1] + " [...]"
+    
+    return truncated + " [...]"
+
+
+def _extract_action_summary(action: str) -> str:
+    """Extract a concise summary from an agent action."""
+    if not action:
+        return "(no action)"
+    
+    # Clean up the action
+    action = action.strip()
+    
+    # Get first line or command
+    first_line = action.split('\n')[0].strip()
+    
+    # For common patterns, extract key info
+    if first_line.startswith('context_'):
+        return first_line[:100]
+    elif 'cat ' in first_line or 'head ' in first_line:
+        return f"Reading file: {first_line.split()[-1] if first_line.split() else first_line}"
+    elif first_line.startswith('find ') or first_line.startswith('grep '):
+        return _truncate_message(first_line, 100)
+    elif first_line.startswith('edit '):
+        return f"Editing file (edit command)"
+    elif 'COMPLETE_TASK' in action or 'submit' in action.lower():
+        return "Submitting solution"
+    
+    return _truncate_message(first_line, 100)
+
+
+def _extract_observation_summary(output: str, max_length: int = 150) -> str:
+    """Extract a concise summary from command output."""
+    if not output:
+        return "(no output)"
+    
+    output = output.strip()
+    lines = output.split('\n')
+    
+    # If output is short, return it
+    if len(output) <= max_length:
+        return output
+    
+    # For file listings, summarize
+    if len(lines) > 10 and all(l.strip() for l in lines[:5]):
+        return f"({len(lines)} lines of output) First: {lines[0][:50]}..."
+    
+    # For errors, prioritize error messages
+    for line in lines:
+        if 'error' in line.lower() or 'exception' in line.lower():
+            return f"ERROR: {_truncate_message(line, max_length)}"
+    
+    return _truncate_message(output, max_length)
+
+
 class ContextAwareMixin:
     """Mixin class that can be added to any agent for context management."""
     
@@ -22,13 +95,14 @@ class ContextAwareMixin:
         self.context_manager = context_manager
         self._step_count = 0
         self._context_initialized = False
+        self._last_logged_action = None
         
         # Get config (works with any agent that has self.config)
         if hasattr(self, 'config'):
             # Ensure config has context settings
             if not hasattr(self.config, 'enable_context'):
                 self.config.enable_context = getattr(self.config, 'enable_context', True)
-        
+    
     def _init_context(self, task: str):
         """Initialize context management for this task."""
         if not getattr(self.config, 'enable_context', True) or not self.context_manager:
@@ -44,24 +118,101 @@ class ContextAwareMixin:
                 name=branch_name,
                 empty=True
             )
-            self._context_initialized = True
-            self._log_context(f"Started task: {task[:100]}...")
         else:
             # No branch specified - generate a unique default branch name
-            # For SWEBench, this should have been set via instance_id
-            # For other cases, use a task-based name
             default_branch = f"task-{hash(task) % 10000}"
-            # Delete existing branch to start fresh (prevents old context affecting new runs)
             self.context_manager.delete_branch(default_branch)
-            # Create fresh empty branch
             self.context_manager.branch_command(name=default_branch, empty=True)
-            self._context_initialized = True
-            self._log_context(f"Started task: {task[:100]}...")
+        
+        self._context_initialized = True
+        
+        # Initialize main.md with task description and prompt for TODOs
+        self._initialize_task_context(task)
+    
+    def _initialize_task_context(self, task: str):
+        """Initialize main.md with task info and create initial commit."""
+        if not self.context_manager:
+            return
+        
+        # Extract a concise task title (first line or first sentence)
+        task_lines = task.strip().split('\n')
+        task_title = task_lines[0][:150] if task_lines else "Unknown task"
+        
+        # Create initial commit with branch purpose
+        try:
+            from minisweagent_tool.agents.contextmanager.models import CommitEntry, generate_commit_id, get_current_timestamp
+            
+            initial_commit = CommitEntry(
+                commit_id=generate_commit_id(),
+                branch_purpose=task_title,
+                commit_contribution=f"Task initialized: {task_title}",
+                timestamp=get_current_timestamp(),
+                parent_commit=None
+            )
+            
+            branch = self.context_manager.filesystem.get_current_branch()
+            if branch:
+                self.context_manager.filesystem.append_commit(branch, initial_commit)
+        except Exception:
+            pass
+        
+        # Create initial log entry
+        self._log_context(f"TASK STARTED: {task_title}")
+        
+        # Update main.md with the task description
+        try:
+            main_content = self.context_manager.filesystem.read_main_md()
+            
+            # Replace the template placeholder with actual task info
+            task_section = f"**Current Task:** {task_title}\n"
+            if len(task) > 150:
+                task_section += f"\n<details>\n<summary>Full description</summary>\n\n{task[:800]}{'...' if len(task) > 800 else ''}\n</details>\n"
+            
+            # Replace placeholder or insert after Project Goals
+            if "<!-- High-level description" in main_content:
+                main_content = main_content.replace(
+                    "<!-- High-level description of the project's purpose and objectives -->",
+                    task_section
+                )
+            elif "# Project Goals" in main_content:
+                main_content = main_content.replace(
+                    "# Project Goals\n",
+                    f"# Project Goals\n\n{task_section}\n"
+                )
+            
+            self.context_manager.filesystem.write_main_md(main_content)
+        except Exception:
+            pass  # Non-critical, continue without main.md update
+    
+    def _log_interaction(self, direction: str, content: str, content_type: str = "message"):
+        """Log an agent-user interaction with appropriate summarization."""
+        if not self._context_initialized or not self.context_manager:
+            return
+        
+        if direction == "agent_action":
+            summary = _extract_action_summary(content)
+            self._log_context(f"ACTION: {summary}")
+        elif direction == "observation":
+            summary = _extract_observation_summary(content)
+            self._log_context(f"RESULT: {summary}")
+        elif direction == "user":
+            summary = _truncate_message(content, 150)
+            self._log_context(f"USER: {summary}")
+        elif direction == "thinking":
+            # Only log substantial thinking
+            if len(content) > 50:
+                summary = _truncate_message(content, 200)
+                self._log_context(f"THINKING: {summary}")
     
     def _log_context(self, reasoning_step: str):
         """Log a reasoning step to context management."""
         if not getattr(self.config, 'enable_context', True) or not self.context_manager:
             return
+        
+        # Avoid duplicate logs
+        if hasattr(self, '_last_log') and self._last_log == reasoning_step:
+            return
+        self._last_log = reasoning_step
         
         self.context_manager.log_command(reasoning_step=reasoning_step)
     
@@ -104,21 +255,28 @@ class ContextAwareAgent(DefaultAgent, ContextAwareMixin):
         """Override to handle context management commands and && chains."""
         action_str = action.get("action", "").strip()
         
+        # Log the action (unless it's a context command - those are meta)
+        if not action_str.startswith("context_"):
+            self._log_interaction("agent_action", action_str)
+        
         # Only intercept && chains if they contain context commands
         if " && " in action_str:
             commands = [cmd.strip() for cmd in action_str.split(" && ")]
             has_context_command = any(cmd.startswith("context_") for cmd in commands)
             if has_context_command:
-                return self._execute_command_chain(action_str)
-            # Otherwise, pass through to parent (don't interfere with normal && chains)
-            return super().execute_action(action)
+                result = self._execute_command_chain(action_str)
+            else:
+                result = super().execute_action(action)
+        elif action_str.startswith("context_"):
+            result = self._execute_context_command(action_str)
+        else:
+            result = super().execute_action(action)
         
-        # Check if it's a context management command
-        if action_str.startswith("context_"):
-            return self._execute_context_command(action_str)
+        # Log the observation/result (unless it's a context command)
+        if not action_str.startswith("context_") and result.get("output"):
+            self._log_interaction("observation", result.get("output", ""))
         
-        # Otherwise, execute normally
-        return super().execute_action(action)
+        return result
     
     def _execute_command_chain(self, command_chain: str) -> dict:
         """Execute a chain of commands separated by &&."""
@@ -244,6 +402,37 @@ class ContextAwareAgent(DefaultAgent, ContextAwareMixin):
                 status_output = self.context_manager.status_command()
                 return {"output": status_output, "returncode": 0, "action": command}
             
+            elif cmd_name == "context_summary":
+                # Quick summary of current progress - useful for recalling where you are
+                summary_output = self.context_manager.summary_command()
+                return {"output": summary_output, "returncode": 0, "action": command}
+            
+            elif cmd_name == "context_todos":
+                # Parse: context_todos [--add "item"] [--complete N]
+                import re
+                action = "list"
+                item = None
+                todo_id = None
+                
+                if "--add" in args_str:
+                    action = "add"
+                    match = re.search(r'--add\s+["\']([^"\']+)["\']', args_str)
+                    if match:
+                        item = match.group(1)
+                    else:
+                        # Try without quotes
+                        match = re.search(r'--add\s+(\S+)', args_str)
+                        if match:
+                            item = match.group(1)
+                elif "--complete" in args_str:
+                    action = "complete"
+                    match = re.search(r'--complete\s+(\d+)', args_str)
+                    if match:
+                        todo_id = int(match.group(1))
+                
+                todos_output = self.context_manager.todos_command(action=action, item=item, todo_id=todo_id)
+                return {"output": todos_output, "returncode": 0, "action": command}
+            
             elif cmd_name == "context_merge":
                 # Parse: context_merge branch1 branch2 [branch3 ...]
                 branch_names = args_str.split()
@@ -278,12 +467,12 @@ class ContextAwareAgent(DefaultAgent, ContextAwareMixin):
             raise
     
     def add_message(self, role: str, content: str, **kwargs):
-        """Override to inject context commands and show context at start."""
+        """Override to inject context commands into system prompt only."""
         # Inject context commands into system template
         if (role == "system" and 
             getattr(self.config, 'enable_context', True) and 
             self.context_manager and
-            "Context Management System" not in content):
+            "TODO-Driven Workflow" not in content):  # Check for new template marker
             from minisweagent_tool.agents.context_commands_template import CONTEXT_COMMANDS_TEMPLATE, LIMITED_CONTEXT_WARNING
             content = content.rstrip() + "\n\n" + CONTEXT_COMMANDS_TEMPLATE
             
@@ -292,29 +481,42 @@ class ContextAwareAgent(DefaultAgent, ContextAwareMixin):
             if max_tokens > 0:
                 content = LIMITED_CONTEXT_WARNING.format(max_context_tokens=max_tokens) + "\n" + content
         
-        # Automatically inject context info into initial user message
-        if (role == "user" and 
-            getattr(self.config, 'enable_context', True) and 
-            self.context_manager and
-            self._context_initialized and
-            "<context_info>" not in content):
-            try:
-                status = self.context_manager.status_command()
-                info = self.context_manager.info_command(level="branch")
-                context_info = f"\n\n<context_info>\nCurrent Context Status:\n{status}\n\nBranch Information:\n{info}\n</context_info>\n"
-                content = content + context_info
-            except Exception:
-                # If context commands fail, continue without context info
-                pass
-        
         return super().add_message(role, content, **kwargs)
     
     def step(self) -> dict:
         """Override step - context commands are handled in execute_action."""
         self._step_count += 1
-        return super().step()
+        result = super().step()
+        
+        # Log thinking/reasoning if present in the response
+        if isinstance(result, dict):
+            thought = result.get("thought") or result.get("thinking") or result.get("reasoning")
+            if thought and len(str(thought)) > 30:
+                self._log_interaction("thinking", str(thought))
+        
+        return result
     
     def get_observation(self, response: dict) -> dict:
         """Override to handle context commands."""
         return super().get_observation(response)
+    
+    def _extract_thought_from_response(self, text: str) -> str | None:
+        """Extract thought/reasoning from model response."""
+        if not text:
+            return None
+        
+        # Look for thought patterns
+        import re
+        patterns = [
+            r'<thought>(.*?)</thought>',
+            r'<thinking>(.*?)</thinking>',
+            r'THOUGHT:\s*(.*?)(?:\n\n|ACTION:)',
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
+        
+        return None
 

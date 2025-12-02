@@ -145,18 +145,36 @@ class ContextManagerAdapter:
         if not self._available:
             return "Context management not available"
         try:
-            print(f"ContextManagerAdapter INFO command: level='{level}' (branch={branch_name})")
-            import io
-            from contextlib import redirect_stdout
-            f = io.StringIO()
-            with redirect_stdout(f):
-                self.commands.info_command(level=level, branch_name=branch_name, format=format, brief=brief)
-            return f.getvalue()
+            return self.commands.info_command(level=level, branch_name=branch_name, format=format, brief=brief)
+        except Exception as e:
+            return f"Error: {str(e)}"
+    
+    def summary_command(self) -> str:
+        """Get a quick progress summary - the primary command for recalling where you are."""
+        if not self._available:
+            return "Context management not available"
+        try:
+            return self.commands.summary_command()
+        except Exception as e:
+            return f"Error: {str(e)}"
+    
+    def todos_command(self, action: str = "list", item: str | None = None, todo_id: int | None = None) -> str:
+        """Manage TODO items.
+        
+        Args:
+            action: "list", "add", or "complete"
+            item: TODO item text (for "add" action)
+            todo_id: TODO item number (for "complete" action, 1-indexed)
+        """
+        if not self._available:
+            return "Context management not available"
+        try:
+            return self.commands.todos_command(action=action, item=item, todo_id=todo_id)
         except Exception as e:
             return f"Error: {str(e)}"
     
     def status_command(self) -> str:
-        """Get context status."""
+        """Get quick context status with recent activity summary."""
         if not self._available:
             return "Context management not available"
         try:
@@ -171,6 +189,27 @@ class ContextManagerAdapter:
                 commits = self.filesystem.read_commits(current_branch)
                 logs = self.filesystem.read_logs(current_branch)
                 status.append(f"Commits: {len(commits)}, Log entries: {len(logs)}")
+                
+                # Add branch purpose if available
+                if commits:
+                    status.append("")
+                    status.append(f"Branch Purpose: {commits[0].branch_purpose}")
+                
+                # Show recent commits (milestones)
+                if commits:
+                    status.append("")
+                    status.append(f"Recent Commits:")
+                    for c in commits[-3:]:
+                        summary = c.commit_contribution.split('\n')[0][:60]
+                        status.append(f"  • [{c.timestamp[:10]}]: {summary}...")
+                
+                # Show recent logs summary
+                if logs:
+                    status.append("")
+                    status.append(f"Recent Log Entries ({len(logs)} total):")
+                    for log in logs[-5:]:
+                        summary = log.reasoning_step.split('\n')[0][:80]
+                        status.append(f"  • {log.timestamp[:19]}: {summary}...")
             
             return "\n".join(status)
         except Exception as e:

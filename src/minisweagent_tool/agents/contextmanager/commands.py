@@ -60,7 +60,7 @@ def _scan_file_structure(root_path: str, max_depth: int = 3) -> dict:
     return scan_dir(root_path, 0)
 
 
-def log_command(reasoning_step: str) -> None:
+def log_command(reasoning_step: str, log_type: str | None = None) -> None:
     """
     LOG command: Append a reasoning step to the current branch's log
     
@@ -70,6 +70,7 @@ def log_command(reasoning_step: str) -> None:
     
     Args:
         reasoning_step: The reasoning/thinking step to log
+        log_type: Optional type prefix (ACTION, RESULT, USER, THINKING, etc.)
     """
     # Ensure context directory exists
     filesystem.ensure_context_directory()
@@ -79,17 +80,69 @@ def log_command(reasoning_step: str) -> None:
     if not current_branch:
         raise ValueError("No current branch set. Use 'branch' command to create/switch branches.")
     
+    # Format the log entry with type prefix if provided
+    formatted_step = reasoning_step
+    if log_type and not reasoning_step.startswith(f"{log_type}:"):
+        formatted_step = f"{log_type}: {reasoning_step}"
+    
+    # Truncate very long entries to keep logs manageable
+    max_log_length = 500
+    if len(formatted_step) > max_log_length:
+        formatted_step = formatted_step[:max_log_length] + " [truncated]"
+    
     # Create log entry
     log_entry = LogEntry(
         timestamp=get_current_timestamp(),
-        reasoning_step=reasoning_step,
+        reasoning_step=formatted_step,
         source_branch=None  # This is the original branch, not from a merge
     )
     
     # Append to log
     filesystem.append_log(current_branch, log_entry)
     
+    # Also update main.md interaction log (but keep it brief)
+    _update_interaction_log(formatted_step)
+    
     print(f"✓ Logged to branch '{current_branch}'")
+
+
+def _update_interaction_log(entry: str, max_entries: int = 20) -> None:
+    """Update the interaction log section in main.md with recent activity."""
+    try:
+        main_content = filesystem.read_main_md()
+        
+        marker = "## Interaction Log"
+        if marker not in main_content:
+            return
+        
+        # Find the interaction log section
+        marker_pos = main_content.find(marker)
+        section_start = marker_pos + len(marker)
+        
+        # Find the next section or end
+        next_section = main_content.find("\n## ", section_start)
+        if next_section == -1:
+            next_section = len(main_content)
+        
+        # Get current entries (skip comment lines)
+        current_section = main_content[section_start:next_section].strip()
+        lines = [l for l in current_section.split('\n') if l.strip() and not l.strip().startswith('<!--')]
+        
+        # Add new entry at the top (most recent first)
+        timestamp = datetime.now().strftime('%H:%M:%S')
+        new_entry = f"- `{timestamp}` {entry[:150]}{'...' if len(entry) > 150 else ''}"
+        
+        # Keep only last N entries
+        lines = [new_entry] + lines[:max_entries - 1]
+        
+        # Rebuild section
+        new_section = f"\n\n" + "\n".join(lines) + "\n"
+        
+        # Replace section in main.md
+        new_content = main_content[:section_start] + new_section + main_content[next_section:]
+        filesystem.write_main_md(new_content)
+    except Exception:
+        pass  # Non-critical, don't fail on logging errors
 
 
 def commit_command(message: Optional[str] = None, from_log_range: Optional[str] = None, 
@@ -399,67 +452,198 @@ def update_main_md_with_progress(branch_name: str, commit: CommitEntry) -> None:
     filesystem.write_main_md(main_content)
 
 
-def info_command(level: str = "project", branch_name: Optional[str] = None, format: str = "markdown", brief: bool = False) -> None:
+def summary_command() -> str:
     """
-    INFO command: Get project information at different levels
+    SUMMARY command: Get a quick, AI-friendly summary of current progress.
+    
+    This is the primary command for the agent to recall where it is.
+    Returns a concise summary with:
+    - Current TODOs (most important!)
+    - Key milestones achieved
+    - Recent activity summary
+    
+    Returns:
+        Formatted summary string
+    """
+    filesystem.ensure_context_directory()
+    
+    current_branch = filesystem.get_current_branch()
+    if not current_branch:
+        return "No active branch. Use context_branch to start tracking progress."
+    
+    commits = filesystem.read_commits(current_branch)
+    logs = filesystem.read_logs(current_branch)
+    
+    lines = []
+    lines.append(f"# Context Recovery - {current_branch}")
+    lines.append("")
+    
+    # Branch purpose / task (first line)
+    if commits:
+        lines.append(f"**Task:** {commits[0].branch_purpose[:200]}")
+        lines.append("")
+    
+    # TODOs - MOST IMPORTANT for recovery
+    try:
+        main_content = filesystem.read_main_md()
+        todo_marker = "## TODO List"
+        if todo_marker in main_content:
+            todo_start = main_content.find(todo_marker)
+            next_section = main_content.find("\n## ", todo_start + len(todo_marker))
+            if next_section == -1:
+                todo_section = main_content[todo_start:]
+            else:
+                todo_section = main_content[todo_start:next_section]
+            
+            # Parse TODOs
+            pending = []
+            completed = []
+            for line in todo_section.split('\n'):
+                line = line.strip()
+                if line.startswith('- [ ]'):
+                    pending.append(line[6:].strip())
+                elif line.startswith('- [x]'):
+                    completed.append(line[6:].strip())
+            
+            lines.append("## TODOs")
+            if pending:
+                lines.append(f"**Pending ({len(pending)}):**")
+                for i, todo in enumerate(pending, 1):
+                    lines.append(f"  {i}. {todo}")
+            else:
+                lines.append("**No pending TODOs.** Add some with `context_todos --add \"task\"`")
+            
+            if completed:
+                lines.append(f"\n**Completed ({len(completed)}):**")
+                for todo in completed[-3:]:  # Show last 3 completed
+                    lines.append(f"  ✓ {todo}")
+            lines.append("")
+    except Exception:
+        lines.append("## TODOs")
+        lines.append("Could not read TODOs. Use `context_todos` to view them.")
+        lines.append("")
+    
+    # Key milestones (commits) - show last 3 with short summaries
+    if commits and len(commits) > 1:  # Skip if only initial commit
+        lines.append("## Milestones Achieved")
+        for c in commits[-3:]:
+            summary = c.commit_contribution.split('\n')[0][:80]
+            if len(c.commit_contribution) > 80:
+                summary += "..."
+            lines.append(f"  • {summary}")
+        lines.append("")
+    
+    # Recent activity from logs - categorized
+    if logs:
+        lines.append(f"## Recent Activity ({len(logs)} entries)")
+        
+        # Show last 8 log entries, categorized
+        recent_logs = logs[-8:]
+        actions = []
+        results = []
+        findings = []
+        
+        for log in recent_logs:
+            entry = log.reasoning_step
+            if entry.startswith("ACTION:"):
+                actions.append(entry[7:].strip()[:60])
+            elif entry.startswith("RESULT:"):
+                results.append(entry[7:].strip()[:60])
+            elif any(kw in entry.lower() for kw in ['found', 'discovered', 'located', 'bug', 'error']):
+                findings.append(entry[:80])
+        
+        if findings:
+            lines.append("**Key Findings:**")
+            for f in findings[-3:]:
+                lines.append(f"  • {f}")
+        
+        if actions:
+            lines.append("**Recent Actions:**")
+            for a in actions[-3:]:
+                lines.append(f"  • {a}")
+        
+        lines.append("")
+        lines.append("_Use `context_info --level session` for full log history._")
+    else:
+        lines.append("## Recent Activity")
+        lines.append("No activity logged yet.")
+    
+    return "\n".join(lines)
+
+
+def info_command(level: str = "project", branch_name: Optional[str] = None, format: str = "markdown", brief: bool = False) -> str:
+    """
+    INFO command: Get detailed information at different levels.
+    
+    For quick progress recall, use `context_summary` instead.
     
     Args:
         level: Information level - "project", "branch", or "session"
         branch_name: Optional branch name (defaults to current branch for branch/session levels)
         format: Output format - "markdown" or "yaml"
         brief: If True, return concise output (useful for limited context scenarios)
+    
+    Returns:
+        Formatted info string
     """
     filesystem.ensure_context_directory()
     
-    # Simple marker so it's easy to see when INFO is invoked in stdout/logs
-    target = branch_name or "current"
-    print(f"✓ Context INFO level='{level}' (branch={target})")
+    current_branch = filesystem.get_current_branch()
+    branches = filesystem.list_branches()
+    target = branch_name or current_branch or "none"
+    
+    output_lines = []
+    output_lines.append(f"✓ Context INFO level='{level}' target='{target}' (current={current_branch}, {len(branches)} branches available)")
     
     if level == "project":
-        show_project_info(format, brief=brief)
+        output_lines.append(format_project_info(format, brief=brief))
     elif level == "branch":
         if branch_name is None:
-            branch_name = filesystem.get_current_branch()
+            branch_name = current_branch
             if branch_name is None:
                 raise ValueError("No branch specified and no current branch set")
-        show_branch_info(branch_name, format, brief=brief)
+        output_lines.append(format_branch_info(branch_name, format, brief=brief))
     elif level == "session":
         if branch_name is None:
-            branch_name = filesystem.get_current_branch()
+            branch_name = current_branch
             if branch_name is None:
                 raise ValueError("No branch specified and no current branch set")
-        show_session_info(branch_name, format, brief=brief)
+        output_lines.append(format_session_info(branch_name, format, brief=brief))
     else:
         raise ValueError(f"Invalid level: {level}. Must be 'project', 'branch', or 'session'")
+    
+    return "\n".join(output_lines)
 
 
-def show_project_info(format: str, brief: bool = False) -> None:
-    """Show project-level information"""
+def format_project_info(format: str, brief: bool = False) -> str:
+    """Format project-level information"""
     main_content = filesystem.read_main_md()
     branches = filesystem.list_branches()
     current_branch = filesystem.get_current_branch()
     
+    lines = []
+    
     if brief:
-        # Concise output for limited context
-        print(f"Branch: {current_branch} | All branches: {', '.join(branches)}")
-        # Show only TODO section if it exists
+        lines.append(f"Branch: {current_branch} | All branches: {', '.join(branches)}")
         if "## TODO" in main_content:
             todo_start = main_content.find("## TODO")
             todo_section = main_content[todo_start:todo_start+500]
-            print(todo_section.split("\n## ")[0][:300])
-        return
+            lines.append(todo_section.split("\n## ")[0][:300])
+        return "\n".join(lines)
     
     if format == "markdown":
-        print("=" * 60)
-        print("PROJECT INFORMATION")
-        print("=" * 60)
-        print("\n" + main_content)
-        print("\n" + "=" * 60)
-        print("BRANCHES")
-        print("=" * 60)
+        lines.append("=" * 60)
+        lines.append("PROJECT INFORMATION")
+        lines.append("=" * 60)
+        lines.append("")
+        lines.append(main_content)
+        lines.append("")
+        lines.append("=" * 60)
+        lines.append("BRANCHES")
+        lines.append("=" * 60)
         for branch in branches:
             marker = " (current)" if branch == current_branch else ""
-            print(f"  - {branch}{marker}")
+            lines.append(f"  - {branch}{marker}")
     else:
         import yaml
         data = {
@@ -467,92 +651,245 @@ def show_project_info(format: str, brief: bool = False) -> None:
             'branches': branches,
             'current_branch': current_branch
         }
-        print(yaml.dump(data, default_flow_style=False))
+        return yaml.dump(data, default_flow_style=False)
+    
+    return "\n".join(lines)
 
 
-def show_branch_info(branch_name: str, format: str, brief: bool = False) -> None:
-    """Show branch-level information"""
+def format_branch_info(branch_name: str, format: str, brief: bool = False) -> str:
+    """Format branch-level information with full commit history"""
     if not filesystem.branch_exists(branch_name):
         raise ValueError(f"Branch '{branch_name}' does not exist")
     
     commits = filesystem.read_commits(branch_name)
+    logs = filesystem.read_logs(branch_name)
     metadata = filesystem.read_metadata(branch_name)
     
+    lines = []
+    
     if brief:
-        # Concise output for limited context - just show key info
-        print(f"[{branch_name}] {len(commits)} commits")
+        lines.append(f"[{branch_name}] {len(commits)} commits, {len(logs)} logs")
         if commits:
-            print(f"Purpose: {commits[0].branch_purpose[:80]}")
-            # Show last 3 commit summaries (truncated)
+            lines.append(f"Purpose: {commits[0].branch_purpose[:80]}")
             for c in commits[-3:]:
                 summary = c.commit_contribution.replace('\n', ' ')[:60]
-                print(f"  • {summary}...")
-        return
+                lines.append(f"  • {summary}...")
+        return "\n".join(lines)
     
     if format == "markdown":
-        print("=" * 60)
-        print(f"BRANCH: {branch_name}")
-        print("=" * 60)
-        print(f"\nCommits: {len(commits)}")
-        if commits:
-            print(f"\nBranch Purpose: {commits[0].branch_purpose}")
-            print(f"\nLatest Commit: {commits[-1].commit_id}")
-            print(f"  Timestamp: {commits[-1].timestamp}")
-            print(f"  Contribution: {commits[-1].commit_contribution[:100]}...")
+        lines.append("=" * 60)
+        lines.append(f"BRANCH: {branch_name} (FULL COMMIT HISTORY)")
+        lines.append("=" * 60)
+        lines.append("")
+        lines.append(f"Total Commits: {len(commits)}")
         
-        print(f"\nMetadata:")
-        print(f"  File Structure: {len(metadata.file_structure)} entries")
-        print(f"  Environment Config: {len(metadata.env_config)} entries")
+        if commits:
+            lines.append(f"Branch Purpose: {commits[0].branch_purpose}")
+        
+        lines.append("")
+        lines.append("-" * 60)
+        lines.append("COMMIT HISTORY (oldest to newest):")
+        lines.append("-" * 60)
+        
+        # Show ALL commits with their contributions
+        for i, c in enumerate(commits, 1):
+            lines.append("")
+            lines.append(f"--- Commit {i}/{len(commits)} ---")
+            lines.append(f"ID: {c.commit_id}")
+            lines.append(f"Timestamp: {c.timestamp}")
+            if c.parent_commit:
+                lines.append(f"Parent: {c.parent_commit}")
+            else:
+                lines.append("Root commit")
+            lines.append(f"Contribution:")
+            lines.append(c.commit_contribution)
+            lines.append("-" * 60)
+        
+        lines.append("")
+        lines.append("Metadata:")
+        lines.append(f"  File Structure: {len(metadata.file_structure)} entries")
+        lines.append(f"  Environment Config: {len(metadata.env_config)} entries")
     else:
         import yaml
         data = {
             'branch_name': branch_name,
             'commit_count': len(commits),
             'branch_purpose': commits[0].branch_purpose if commits else None,
-            'latest_commit': commits[-1].to_dict() if commits else None,
+            'commits': [c.to_dict() for c in commits],
             'metadata': metadata.to_dict()
         }
-        print(yaml.dump(data, default_flow_style=False))
+        return yaml.dump(data, default_flow_style=False)
+    
+    return "\n".join(lines)
 
 
-def show_session_info(branch_name: str, format: str, brief: bool = False) -> None:
-    """Show session-level (log) information"""
+def format_session_info(branch_name: str, format: str, brief: bool = False) -> str:
+    """Format session-level (log) information with FULL history"""
     if not filesystem.branch_exists(branch_name):
         raise ValueError(f"Branch '{branch_name}' does not exist")
     
     logs = filesystem.read_logs(branch_name)
     
+    lines = []
+    
     if brief:
-        # Very concise output - just bullet points of recent logs
-        print(f"[{branch_name}] {len(logs)} logs. Recent:")
-        # Show last 5 logs, heavily truncated
-        for log in logs[-5:]:
-            summary = log.reasoning_step.replace('\n', ' ')[:80]
-            print(f"  • {summary}...")
-        return
+        # Concise output - recent logs with truncation
+        lines.append(f"[{branch_name}] {len(logs)} logs. Recent 8:")
+        for log in logs[-8:]:
+            summary = log.reasoning_step.replace('\n', ' ')[:300]
+            lines.append(f"  • {log.timestamp[:16]}: {summary}...")
+        return "\n".join(lines)
     
     if format == "markdown":
-        print("=" * 60)
-        print(f"SESSION LOGS: {branch_name}")
-        print("=" * 60)
-        print(f"\nTotal log entries: {len(logs)}")
-        print("\n" + "-" * 60)
+        lines.append("=" * 60)
+        lines.append(f"SESSION LOGS: {branch_name} (FULL HISTORY)")
+        lines.append("=" * 60)
+        lines.append("")
+        lines.append(f"Total log entries: {len(logs)}")
+        lines.append("")
+        lines.append("-" * 60)
         
-        # Show recent logs (last 10)
-        recent_logs = logs[-10:] if len(logs) > 10 else logs
-        for log in recent_logs:
-            source_tag = f" [from {log.source_branch}]" if log.source_branch else ""
-            print(f"\n{log.timestamp}{source_tag}")
-            print(log.reasoning_step[:200] + "..." if len(log.reasoning_step) > 200 else log.reasoning_step)
-            print("-" * 60)
+        # Show ALL logs - this is the detailed history recovery
+        for i, log in enumerate(logs, 1):
+            lines.append("")
+            lines.append(f"--- Log {i}/{len(logs)} ---")
+            lines.append(f"Timestamp: {log.timestamp}")
+            if log.source_branch:
+                lines.append(f"Source: {log.source_branch}")
+            lines.append("Content:")
+            lines.append(log.reasoning_step)
+            lines.append("-" * 60)
     else:
         import yaml
         data = {
             'branch_name': branch_name,
             'total_logs': len(logs),
-            'recent_logs': [log.to_dict() for log in logs[-10:]]
+            'logs': [log.to_dict() for log in logs]
         }
-        print(yaml.dump(data, default_flow_style=False))
+        return yaml.dump(data, default_flow_style=False)
+    
+    return "\n".join(lines)
+
+
+def todos_command(action: str = "list", item: Optional[str] = None, todo_id: Optional[int] = None) -> str:
+    """
+    TODOS command: Manage TODO items
+    
+    Args:
+        action: "list", "add", or "complete"
+        item: TODO item text (for "add" action)
+        todo_id: TODO item number to complete (for "complete" action, 1-indexed)
+    
+    Returns:
+        Formatted TODO list or confirmation message
+    """
+    filesystem.ensure_context_directory()
+    
+    main_content = filesystem.read_main_md()
+    
+    # Find TODO section
+    todo_marker = "## TODO List"
+    if todo_marker not in main_content:
+        # Add TODO section if it doesn't exist
+        main_content += f"\n\n{todo_marker}\n\n"
+        filesystem.write_main_md(main_content)
+    
+    # Parse existing TODOs
+    todo_start = main_content.find(todo_marker)
+    todo_section_start = todo_start + len(todo_marker)
+    
+    # Find next section or end of file
+    next_section = main_content.find("\n## ", todo_section_start)
+    if next_section == -1:
+        todo_section = main_content[todo_section_start:]
+    else:
+        todo_section = main_content[todo_section_start:next_section]
+    
+    # Parse TODO items (lines starting with - [ ] or - [x])
+    lines = todo_section.strip().split('\n')
+    todos = []
+    other_lines = []
+    
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith('- [ ]') or stripped.startswith('- [x]'):
+            completed = stripped.startswith('- [x]')
+            text = stripped[6:].strip()  # Remove '- [ ] ' or '- [x] '
+            todos.append({'text': text, 'completed': completed})
+        elif stripped and not stripped.startswith('<!--'):
+            other_lines.append(line)
+    
+    if action == "list":
+        if not todos:
+            return "No TODOs. Use `context_todos --add \"task description\"` to add one."
+        
+        result = ["## Current TODOs", ""]
+        for i, todo in enumerate(todos, 1):
+            status = "✓" if todo['completed'] else " "
+            result.append(f"  {i}. [{status}] {todo['text']}")
+        return "\n".join(result)
+    
+    elif action == "add":
+        if not item:
+            return "Error: Please provide a TODO item with --add \"description\""
+        
+        todos.append({'text': item, 'completed': False})
+        _save_todos(main_content, todo_marker, todos, other_lines)
+        return f"✓ Added TODO: {item}"
+    
+    elif action == "complete":
+        if todo_id is None:
+            return "Error: Please provide a TODO number with --complete N"
+        if todo_id < 1 or todo_id > len(todos):
+            return f"Error: Invalid TODO number. Valid range: 1-{len(todos)}"
+        
+        todos[todo_id - 1]['completed'] = True
+        completed_text = todos[todo_id - 1]['text']
+        _save_todos(main_content, todo_marker, todos, other_lines)
+        
+        # Also create a commit noting the completed TODO
+        current_branch = filesystem.get_current_branch()
+        if current_branch:
+            new_commit = CommitEntry(
+                commit_id=generate_commit_id(),
+                branch_purpose=filesystem.read_commits(current_branch)[0].branch_purpose if filesystem.read_commits(current_branch) else "Development",
+                commit_contribution=f"Completed TODO: {completed_text}",
+                timestamp=get_current_timestamp(),
+                parent_commit=filesystem.read_commits(current_branch)[-1].commit_id if filesystem.read_commits(current_branch) else None
+            )
+            filesystem.append_commit(current_branch, new_commit)
+        
+        return f"✓ Completed TODO #{todo_id}: {completed_text}"
+    
+    else:
+        return f"Error: Unknown action '{action}'. Use 'list', 'add', or 'complete'."
+
+
+def _save_todos(main_content: str, todo_marker: str, todos: list, other_lines: list) -> None:
+    """Helper to save TODOs back to main.md"""
+    todo_start = main_content.find(todo_marker)
+    todo_section_start = todo_start + len(todo_marker)
+    
+    # Find next section or end of file  
+    next_section = main_content.find("\n## ", todo_section_start)
+    
+    # Build new TODO section
+    new_todo_section = "\n\n"
+    for todo in todos:
+        checkbox = "[x]" if todo['completed'] else "[ ]"
+        new_todo_section += f"- {checkbox} {todo['text']}\n"
+    
+    # Add any other preserved lines
+    if other_lines:
+        new_todo_section += "\n" + "\n".join(other_lines) + "\n"
+    
+    # Reconstruct main.md
+    if next_section == -1:
+        new_content = main_content[:todo_section_start] + new_todo_section
+    else:
+        new_content = main_content[:todo_section_start] + new_todo_section + main_content[next_section:]
+    
+    filesystem.write_main_md(new_content)
 
 
 def git_commit_context(branch_name: str, commit_id: str) -> None:
