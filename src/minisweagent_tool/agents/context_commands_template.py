@@ -77,18 +77,40 @@ context_log "grep __getattr__: sky_coordinate.py:869,898 frame.py:234"
 
 **Always use literal values you saw in the output, never bash variables or substitutions.**
 
-**STEP 3: VERIFY & SUBMIT (Critical - Do This Immediately After Fix)**
+**STEP 3: VERIFY & SUBMIT (Critical - Do This Once, Then STOP)**
 Following the recommended workflow, after implementing your fix:
 1. **Run your reproduction script ONCE** to verify the fix works (this is the script you created in STEP 1)
-2. **If verification passes, IMMEDIATELY submit** - do NOT:
+2. **If verification passes, IMMEDIATELY submit ONCE** - do NOT:
    - Run the script multiple times
    - Create additional verification scripts
    - Run echo/printf commands to "confirm" completion
    - Test extensive edge cases (unless task explicitly requires)
    - Add extra TODOs after the fix is done
-3. **Use the exact submission command from the task instructions** (typically `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && git diff --cached`)
+   - Run `context_summary` or other commands after submission
+3. **Use the exact submission command from the task instructions as a STANDALONE command** (typically `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && git diff --cached`)
 
-**When verification passes, SUBMIT IMMEDIATELY. One successful verification is sufficient.**
+**CRITICAL: The submission command must be run ALONE, not combined with context commands!**
+
+✗ **WRONG** - Don't combine submission with context commands:
+```bash
+context_log "..." && context_todos --complete 5 && echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && git diff --cached
+```
+
+✓ **RIGHT** - Run submission as a standalone command:
+```bash
+echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && git diff --cached
+```
+
+**If you need to mark TODOs complete or log before submitting, do that in a SEPARATE command first, then submit in the NEXT response.**
+
+**CRITICAL: Submission is FINAL - After you see the diff output, the task is COMPLETE. DO NOT:**
+- Submit again (you already submitted!)
+- Run any more commands
+- Check context_summary
+- Add more TODOs
+- Do anything else
+
+**When verification passes, submit ONCE. After you see the diff output, STOP - the task is done.**
 
 **STEP 4: RECOVER WHEN LOST**
 If context was truncated and you feel lost:
@@ -193,12 +215,19 @@ python3 repro_script.py
 ```
 
 ```
-# Response 10: If verification passes, SUBMIT IMMEDIATELY (do NOT run script again or add confirmations)
-echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && git diff --cached
+# Response 10: If verification passes, mark final TODO complete (if needed) in a separate command
+context_todos --complete 5
 ```
 
 ```
-# If context truncated later, recover with:
+# Response 11: Submit as a STANDALONE command (do NOT combine with context commands)
+echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && git diff --cached
+```
+
+**After Response 11: You see the diff output. The task is COMPLETE. DO NOT run any more commands.**
+
+```
+# If context truncated BEFORE submission, recover with:
 context_summary
 ```
 
@@ -209,6 +238,7 @@ context_summary
 - Completing a TODO = automatic context checkpoint (NOT a git commit)
 - When confused, `context_summary` is your friend
 - **NEVER run `git commit` before the final submission** - it will cause your patch to be empty
-- **After verification passes, SUBMIT IMMEDIATELY** - do not run confirmation loops or extra checks
+- **After verification passes, submit ONCE** - do not run confirmation loops or extra checks
 - **One verification is enough** - if it works, submit. If it fails, fix and verify once more, then submit
+- **SUBMISSION IS FINAL** - After you see the diff output from the submission command, the task is COMPLETE. **DO NOT submit again or run any more commands.**
 """
