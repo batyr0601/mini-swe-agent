@@ -33,7 +33,7 @@ context_todos --add "5. Verify fix: [how to test the fix]"
 For each TODO:
 1. **After each command**, log a summary of what you learned
 2. Log your findings and decisions
-3. When done, mark complete: `context_todos --complete N` (this auto-commits)
+3. When done, mark complete: `context_todos --complete N` (saves progress to context)
 
 **CRITICAL: Log in a SEPARATE step AFTER seeing output.**
 
@@ -70,7 +70,7 @@ This shows your TODOs, milestones, and recent activity.
 |---------|---------|
 | `context_todos` | View your TODO list |
 | `context_todos --add "task"` | Add a TODO (be specific!) |
-| `context_todos --complete N` | Mark TODO #N done (auto-commits) |
+| `context_todos --complete N` | Mark TODO #N done (saves to context) |
 | `context_log "message"` | Log a finding, decision, or observation |
 | `context_commit --message "..."` | Manual checkpoint at a milestone |
 | `context_summary` | **Primary recovery command** - shows progress |
@@ -150,6 +150,7 @@ context_summary
 ### Remember
 - TODOs persist across context truncation - they're your roadmap
 - Logs are your memory - be concise but capture key details
-- Completing a TODO = automatic milestone commit
+- Completing a TODO = automatic context checkpoint (NOT a git commit)
 - When confused, `context_summary` is your friend
+- **NEVER run `git commit` before the final submission** - it will cause your patch to be empty
 """
