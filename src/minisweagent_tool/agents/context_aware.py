@@ -63,28 +63,23 @@ def _extract_action_summary(action: str) -> str:
     return _truncate_message(first_line, 100)
 
 
-def _extract_observation_summary(output: str, max_length: int = 150) -> str:
-    """Extract a concise summary from command output."""
+def _extract_observation_summary(output: str) -> str | None:
+    """Extract a brief summary from command output for automatic logging.
+    
+    Returns None for almost everything - LLM should summarize via context_log.
+    Only auto-logs very short outputs (success messages, simple confirmations).
+    """
     if not output:
-        return "(no output)"
+        return None
     
     output = output.strip()
-    lines = output.split('\n')
     
-    # If output is short, return it
-    if len(output) <= max_length:
+    # Only auto-log very short outputs (success messages, etc)
+    if len(output) <= 80:
         return output
     
-    # For file listings, summarize
-    if len(lines) > 10 and all(l.strip() for l in lines[:5]):
-        return f"({len(lines)} lines of output) First: {lines[0][:50]}..."
-    
-    # For errors, prioritize error messages
-    for line in lines:
-        if 'error' in line.lower() or 'exception' in line.lower():
-            return f"ERROR: {_truncate_message(line, max_length)}"
-    
-    return _truncate_message(output, max_length)
+    # Everything else: LLM should summarize via context_log
+    return None
 
 
 class ContextAwareMixin:
@@ -185,7 +180,11 @@ class ContextAwareMixin:
             pass  # Non-critical, continue without main.md update
     
     def _log_interaction(self, direction: str, content: str, content_type: str = "message"):
-        """Log an agent-user interaction with appropriate summarization."""
+        """Log an agent-user interaction with appropriate summarization.
+        
+        For observations (command output), only auto-logs errors and short outputs.
+        Longer outputs are not auto-logged - the LLM should use context_log to summarize.
+        """
         if not self._context_initialized or not self.context_manager:
             return
         
@@ -193,8 +192,11 @@ class ContextAwareMixin:
             summary = _extract_action_summary(content)
             self._log_context(f"ACTION: {summary}")
         elif direction == "observation":
+            # Only auto-log if there's something notable (errors, short output)
             summary = _extract_observation_summary(content)
-            self._log_context(f"RESULT: {summary}")
+            if summary:
+                self._log_context(f"RESULT: {summary}")
+            # Otherwise, LLM should summarize via context_log
         elif direction == "user":
             summary = _truncate_message(content, 150)
             self._log_context(f"USER: {summary}")

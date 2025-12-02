@@ -86,7 +86,8 @@ def log_command(reasoning_step: str, log_type: str | None = None) -> None:
         formatted_step = f"{log_type}: {reasoning_step}"
     
     # Truncate very long entries to keep logs manageable
-    max_log_length = 500
+    # LLM should provide concise summaries, but cap at 800 chars as safety
+    max_log_length = 800
     if len(formatted_step) > max_log_length:
         formatted_step = formatted_step[:max_log_length] + " [truncated]"
     
