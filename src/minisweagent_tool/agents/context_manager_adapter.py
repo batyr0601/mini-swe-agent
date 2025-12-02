@@ -133,8 +133,15 @@ class ContextManagerAdapter:
             return
         self.commands.merge_command(source_branches=branches)
     
-    def info_command(self, level: str = "branch", branch_name: str | None = None, format: str = "markdown") -> str:
-        """Get context information."""
+    def info_command(self, level: str = "branch", branch_name: str | None = None, format: str = "markdown", brief: bool = False) -> str:
+        """Get context information.
+        
+        Args:
+            level: Information level - "project", "branch", or "session"
+            branch_name: Optional branch name
+            format: Output format
+            brief: If True, return concise output (for limited context scenarios)
+        """
         if not self._available:
             return "Context management not available"
         try:
@@ -143,7 +150,7 @@ class ContextManagerAdapter:
             from contextlib import redirect_stdout
             f = io.StringIO()
             with redirect_stdout(f):
-                self.commands.info_command(level=level, branch_name=branch_name, format=format)
+                self.commands.info_command(level=level, branch_name=branch_name, format=format, brief=brief)
             return f.getvalue()
         except Exception as e:
             return f"Error: {str(e)}"

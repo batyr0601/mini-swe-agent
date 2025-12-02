@@ -228,6 +228,7 @@ def main(
     redo_existing: bool = typer.Option(False, "--redo-existing", help="Redo existing instances", rich_help_panel="Data selection"),
     config_spec: Path = typer.Option( builtin_config_dir / "extra" / "swebench.yaml", "-c", "--config", help="Path to a config file", rich_help_panel="Basic"),
     environment_class: str | None = typer.Option( None, "--environment-class", help="Environment type to use. Recommended are docker or singularity", rich_help_panel="Advanced"),
+    max_context_tokens: int = typer.Option(0, "--max-context-tokens", help="Limit context to N tokens (0=unlimited). Recommended: 16000 for limited context experiments", rich_help_panel="Advanced"),
 ) -> None:
     # fmt: on
     output_path = Path(output)
@@ -255,6 +256,9 @@ def main(
         config.setdefault("model", {})["model_name"] = model
     if model_class is not None:
         config.setdefault("model", {})["model_class"] = model_class
+    if max_context_tokens > 0:
+        config.setdefault("agent", {})["max_context_tokens"] = max_context_tokens
+        logger.info(f"Context limited to {max_context_tokens} tokens")
 
     progress_manager = RunBatchProgressManager(len(instances), output_path / f"exit_statuses_{time.time()}.yaml")
 

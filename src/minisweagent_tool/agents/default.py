@@ -1,13 +1,17 @@
 """Basic agent class. See https://mini-swe-agent.com/latest/advanced/control_flow/ for visual explanation."""
 
+import logging
 import re
 import subprocess
 import time
 from dataclasses import asdict, dataclass
 
+import litellm
 from jinja2 import StrictUndefined, Template
 
 from minisweagent_tool import Environment, Model
+
+logger = logging.getLogger("minisweagent_tool.agents.default")
 
 
 @dataclass
@@ -28,6 +32,7 @@ class AgentConfig:
     action_regex: str = r"```bash\s*\n(.*?)\n```"
     step_limit: int = 0
     cost_limit: float = 3.0
+    max_context_tokens: int = 0  # 0 = unlimited, >0 = truncate to this limit
 
 
 class NonTerminatingException(Exception):
@@ -94,9 +99,40 @@ class DefaultAgent:
         """Query the model and return the response."""
         if 0 < self.config.step_limit <= self.model.n_calls or 0 < self.config.cost_limit <= self.model.cost:
             raise LimitsExceeded()
-        response = self.model.query(self.messages)
+        messages = self._truncate_to_token_limit(self.messages) if self.config.max_context_tokens > 0 else self.messages
+        response = self.model.query(messages)
         self.add_message("assistant", **response)
         return response
+
+    def _truncate_to_token_limit(self, messages: list[dict]) -> list[dict]:
+        """Keep system message + as many recent messages as fit in max_context_tokens."""
+        max_tokens = self.config.max_context_tokens
+        model_name = getattr(self.model.config, "model_name", "gpt-4")
+
+        # Always keep system message (first message)
+        system_msg = messages[0] if messages and messages[0]["role"] == "system" else None
+        non_system = messages[1:] if system_msg else messages
+
+        # Count system tokens
+        system_tokens = litellm.token_counter(model=model_name, messages=[system_msg]) if system_msg else 0
+        remaining_budget = max_tokens - system_tokens
+
+        # Walk backwards from most recent, keep what fits
+        kept = []
+        for msg in reversed(non_system):
+            msg_for_count = {"role": msg["role"], "content": msg.get("content", "")}
+            msg_tokens = litellm.token_counter(model=model_name, messages=[msg_for_count])
+            if remaining_budget >= msg_tokens:
+                kept.insert(0, msg)
+                remaining_budget -= msg_tokens
+            else:
+                break
+
+        if len(kept) < len(non_system):
+            dropped = len(non_system) - len(kept)
+            logger.info(f"Context truncation: dropped {dropped} oldest messages to fit {max_tokens} token limit")
+
+        return ([system_msg] + kept) if system_msg else kept
 
     def get_observation(self, response: dict) -> dict:
         """Execute the action and return the observation."""

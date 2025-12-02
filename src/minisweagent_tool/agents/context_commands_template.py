@@ -1,5 +1,23 @@
 """Template snippet for context management commands in system prompts."""
 
+# Warning shown when context is artificially limited
+LIMITED_CONTEXT_WARNING = """
+## ⚠️ CRITICAL: Limited Context Window
+
+**Your context window is artificially limited to {max_context_tokens} tokens.** This means:
+- Older messages WILL BE DROPPED from your context as the conversation grows
+- You WILL FORGET earlier discoveries, file locations, and reasoning
+- **You MUST use the context management system to persist important information**
+
+**SURVIVAL STRATEGY:**
+1. **IMMEDIATELY log every important discovery**: `context_log "Found X at Y"`
+2. **Before making changes**: `context_info --level session --brief` to recall what you learned
+3. **Commit milestones frequently**: `context_commit --message "description"`
+4. **If you feel lost**: Check `context_info --level branch --brief` to recover your progress
+
+**Without using context commands, you WILL fail on complex tasks due to memory loss.**
+"""
+
 CONTEXT_COMMANDS_TEMPLATE = """
 ## Context Management System
 
@@ -84,6 +102,10 @@ This helps you:
 **context_info --level project** - High-level project goals, all branches, overall status
 **context_info --level branch** - Current branch's commits, progress, purpose (USE THIS MOST)
 **context_info --level session** - Detailed reasoning logs from current session
+
+**Add `--brief` for concise output (recommended when context is limited):**
+- `context_info --level branch --brief` - Quick summary of branch progress
+- `context_info --level session --brief` - Just recent log bullet points
 
 **context_status** - Quick status: current branch, available branches, commit/log counts
 

@@ -399,7 +399,7 @@ def update_main_md_with_progress(branch_name: str, commit: CommitEntry) -> None:
     filesystem.write_main_md(main_content)
 
 
-def info_command(level: str = "project", branch_name: Optional[str] = None, format: str = "markdown") -> None:
+def info_command(level: str = "project", branch_name: Optional[str] = None, format: str = "markdown", brief: bool = False) -> None:
     """
     INFO command: Get project information at different levels
     
@@ -407,6 +407,7 @@ def info_command(level: str = "project", branch_name: Optional[str] = None, form
         level: Information level - "project", "branch", or "session"
         branch_name: Optional branch name (defaults to current branch for branch/session levels)
         format: Output format - "markdown" or "yaml"
+        brief: If True, return concise output (useful for limited context scenarios)
     """
     filesystem.ensure_context_directory()
     
@@ -415,28 +416,38 @@ def info_command(level: str = "project", branch_name: Optional[str] = None, form
     print(f"✓ Context INFO level='{level}' (branch={target})")
     
     if level == "project":
-        show_project_info(format)
+        show_project_info(format, brief=brief)
     elif level == "branch":
         if branch_name is None:
             branch_name = filesystem.get_current_branch()
             if branch_name is None:
                 raise ValueError("No branch specified and no current branch set")
-        show_branch_info(branch_name, format)
+        show_branch_info(branch_name, format, brief=brief)
     elif level == "session":
         if branch_name is None:
             branch_name = filesystem.get_current_branch()
             if branch_name is None:
                 raise ValueError("No branch specified and no current branch set")
-        show_session_info(branch_name, format)
+        show_session_info(branch_name, format, brief=brief)
     else:
         raise ValueError(f"Invalid level: {level}. Must be 'project', 'branch', or 'session'")
 
 
-def show_project_info(format: str) -> None:
+def show_project_info(format: str, brief: bool = False) -> None:
     """Show project-level information"""
     main_content = filesystem.read_main_md()
     branches = filesystem.list_branches()
     current_branch = filesystem.get_current_branch()
+    
+    if brief:
+        # Concise output for limited context
+        print(f"Branch: {current_branch} | All branches: {', '.join(branches)}")
+        # Show only TODO section if it exists
+        if "## TODO" in main_content:
+            todo_start = main_content.find("## TODO")
+            todo_section = main_content[todo_start:todo_start+500]
+            print(todo_section.split("\n## ")[0][:300])
+        return
     
     if format == "markdown":
         print("=" * 60)
@@ -459,13 +470,24 @@ def show_project_info(format: str) -> None:
         print(yaml.dump(data, default_flow_style=False))
 
 
-def show_branch_info(branch_name: str, format: str) -> None:
+def show_branch_info(branch_name: str, format: str, brief: bool = False) -> None:
     """Show branch-level information"""
     if not filesystem.branch_exists(branch_name):
         raise ValueError(f"Branch '{branch_name}' does not exist")
     
     commits = filesystem.read_commits(branch_name)
     metadata = filesystem.read_metadata(branch_name)
+    
+    if brief:
+        # Concise output for limited context - just show key info
+        print(f"[{branch_name}] {len(commits)} commits")
+        if commits:
+            print(f"Purpose: {commits[0].branch_purpose[:80]}")
+            # Show last 3 commit summaries (truncated)
+            for c in commits[-3:]:
+                summary = c.commit_contribution.replace('\n', ' ')[:60]
+                print(f"  • {summary}...")
+        return
     
     if format == "markdown":
         print("=" * 60)
@@ -493,12 +515,21 @@ def show_branch_info(branch_name: str, format: str) -> None:
         print(yaml.dump(data, default_flow_style=False))
 
 
-def show_session_info(branch_name: str, format: str) -> None:
+def show_session_info(branch_name: str, format: str, brief: bool = False) -> None:
     """Show session-level (log) information"""
     if not filesystem.branch_exists(branch_name):
         raise ValueError(f"Branch '{branch_name}' does not exist")
     
     logs = filesystem.read_logs(branch_name)
+    
+    if brief:
+        # Very concise output - just bullet points of recent logs
+        print(f"[{branch_name}] {len(logs)} logs. Recent:")
+        # Show last 5 logs, heavily truncated
+        for log in logs[-5:]:
+            summary = log.reasoning_step.replace('\n', ' ')[:80]
+            print(f"  • {summary}...")
+        return
     
     if format == "markdown":
         print("=" * 60)

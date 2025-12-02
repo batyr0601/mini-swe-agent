@@ -1,5 +1,5 @@
 """
-Show assistant messages from a trajectory file.
+Show all messages from a trajectory file.
 
 Usage: python show_assistant_messages.py path/to/*.traj.json
 """
@@ -14,12 +14,11 @@ def main(path: str):
 
     messages = data.get("messages", [])
     for i, msg in enumerate(messages):
-        if msg.get("role") != "assistant":
-            continue
-
+        role = msg.get("role", "unknown")
         content = msg.get("content", "")
         ts = msg.get("timestamp")
-        header = f"[ASSISTANT #{i} @ {ts}]" if ts is not None else f"[ASSISTANT #{i}]"
+        role_upper = role.upper()
+        header = f"[{role_upper} #{i} @ {ts}]" if ts is not None else f"[{role_upper} #{i}]"
         print("=" * 80)
         print(header)
         print("-" * 80)
@@ -28,13 +27,14 @@ def main(path: str):
         print(content.rstrip())
         print()
 
-        # Quick context-command summary
-        ctx_calls = [line for line in content.splitlines() if "context_" in line]
-        if ctx_calls:
-            print("  [context commands in this message:]")
-            for line in ctx_calls:
-                print("   ", line.strip())
-        print()
+        # Quick context-command summary (only for assistant messages)
+        if role == "assistant":
+            ctx_calls = [line for line in content.splitlines() if "context_" in line]
+            if ctx_calls:
+                print("  [context commands in this message:]")
+                for line in ctx_calls:
+                    print("   ", line.strip())
+                print()
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:

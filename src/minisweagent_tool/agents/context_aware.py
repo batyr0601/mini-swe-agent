@@ -223,10 +223,11 @@ class ContextAwareAgent(DefaultAgent, ContextAwareMixin):
                 return {"output": f"✓ Switched to branch '{name}'", "returncode": 0, "action": command}
             
             elif cmd_name == "context_info":
-                # Parse: context_info [--level project|branch|session] [--branch name]
+                # Parse: context_info [--level project|branch|session] [--branch name] [--brief]
                 import re
                 level = "branch"
                 branch_name = None
+                brief = "--brief" in args_str
                 
                 level_match = re.search(r'--level\s+(\S+)', args_str)
                 if level_match:
@@ -236,7 +237,7 @@ class ContextAwareAgent(DefaultAgent, ContextAwareMixin):
                 if branch_match:
                     branch_name = branch_match.group(1)
                 
-                info_output = self.context_manager.info_command(level=level, branch_name=branch_name)
+                info_output = self.context_manager.info_command(level=level, branch_name=branch_name, brief=brief)
                 return {"output": info_output, "returncode": 0, "action": command}
             
             elif cmd_name == "context_status":
@@ -283,8 +284,13 @@ class ContextAwareAgent(DefaultAgent, ContextAwareMixin):
             getattr(self.config, 'enable_context', True) and 
             self.context_manager and
             "Context Management System" not in content):
-            from minisweagent_tool.agents.context_commands_template import CONTEXT_COMMANDS_TEMPLATE
+            from minisweagent_tool.agents.context_commands_template import CONTEXT_COMMANDS_TEMPLATE, LIMITED_CONTEXT_WARNING
             content = content.rstrip() + "\n\n" + CONTEXT_COMMANDS_TEMPLATE
+            
+            # Add limited context warning if max_context_tokens is set
+            max_tokens = getattr(self.config, 'max_context_tokens', 0)
+            if max_tokens > 0:
+                content = LIMITED_CONTEXT_WARNING.format(max_context_tokens=max_tokens) + "\n" + content
         
         # Automatically inject context info into initial user message
         if (role == "user" and 
