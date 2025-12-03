@@ -64,6 +64,7 @@ class ContextManagerAdapter:
             self.commands = pkg.commands
             self.filesystem = pkg.filesystem
             self._available = True
+            self._workspace_path = None
             
             # Set workspace path if provided
             if workspace_path:
@@ -80,25 +81,34 @@ class ContextManagerAdapter:
         """Set the workspace root for .context folder."""
         if not self._available:
             return
+        self._workspace_path = path
         self.filesystem.set_workspace_root(path)
         self.filesystem.ensure_context_directory()
+    
+    def _ensure_workspace(self):
+        """Ensure workspace is set before any operation (for concurrency safety)."""
+        if self._workspace_path:
+            self.filesystem.set_workspace_root(self._workspace_path)
         
     def log_command(self, reasoning_step: str):
         """Log a reasoning step."""
         if not self._available:
             return
+        self._ensure_workspace()
         self.commands.log_command(reasoning_step=reasoning_step)
     
     def commit_command(self, message: str | None = None, from_log: str | None = None):
         """Create a commit."""
         if not self._available:
             return
+        self._ensure_workspace()
         self.commands.commit_command(message=message, from_log_range=from_log)
     
     def branch_command(self, name: str, empty: bool = False, from_branch: str | None = None):
         """Create or switch to a branch."""
         if not self._available:
             return
+        self._ensure_workspace()
         # If branch exists, switch to it (like CLI does)
         if self.filesystem.branch_exists(name):
             self.filesystem.set_current_branch(name)
@@ -110,6 +120,7 @@ class ContextManagerAdapter:
         """Delete a branch (for fresh starts on reruns)."""
         if not self._available:
             return
+        self._ensure_workspace()
         import shutil
         
         if self.filesystem.branch_exists(name):
@@ -131,6 +142,7 @@ class ContextManagerAdapter:
         """Merge branches."""
         if not self._available:
             return
+        self._ensure_workspace()
         self.commands.merge_command(source_branches=branches)
     
     def info_command(self, level: str = "branch", branch_name: str | None = None, format: str = "markdown", brief: bool = False) -> str:
@@ -145,6 +157,7 @@ class ContextManagerAdapter:
         if not self._available:
             return "Context management not available"
         try:
+            self._ensure_workspace()
             return self.commands.info_command(level=level, branch_name=branch_name, format=format, brief=brief)
         except Exception as e:
             return f"Error: {str(e)}"
@@ -154,6 +167,7 @@ class ContextManagerAdapter:
         if not self._available:
             return "Context management not available"
         try:
+            self._ensure_workspace()
             return self.commands.summary_command()
         except Exception as e:
             return f"Error: {str(e)}"
@@ -169,6 +183,7 @@ class ContextManagerAdapter:
         if not self._available:
             return "Context management not available"
         try:
+            self._ensure_workspace()
             return self.commands.todos_command(action=action, item=item, todo_id=todo_id)
         except Exception as e:
             return f"Error: {str(e)}"
@@ -178,6 +193,7 @@ class ContextManagerAdapter:
         if not self._available:
             return "Context management not available"
         try:
+            self._ensure_workspace()
             current_branch = self.filesystem.get_current_branch()
             branches = self.filesystem.list_branches()
             
