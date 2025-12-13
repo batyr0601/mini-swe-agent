@@ -40,74 +40,74 @@ Each setup has:
 
 ### 1. Untruncated Context
 - **Results**: 28/50 resolved
-- **Preds file**: `./results-context-untruncated-50questions/preds.json`
-- **SWE-bench file**: `./results-context-untruncated-50questions/openai__gpt-5-mini.results-context-untruncated-50questions.json`
+- **Preds file**: `./experiment_results/results-context-untruncated/preds.json`
+- **SWE-bench file**: `./experiment_results/results-context-untruncated/openai__gpt-5-mini.results-context-untruncated-50questions.json`
 - **Command**:
 ```bash
-mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./results-context-untruncated-50questions --config ./src/minisweagent_tool/config/extra/swebench_context.yaml --workers 10
+mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./experiment_results/results-context-untruncated --config ./src/minisweagent_tool/config/extra/swebench_context.yaml --workers 10
 ```
 
 ### 2. Untruncated Baseline
 - **Results**: 22/50 resolved
-- **Preds file**: `./results-baseline-untruncated-50questions/preds.json`
-- **SWE-bench file**: `./results-baseline-untruncated-50questions/openai__gpt-5-mini.results-baseline-untruncated-50questions.json`
+- **Preds file**: `./experiment_results/results-baseline-untruncated/preds.json`
+- **SWE-bench file**: `./experiment_results/results-baseline-untruncated/openai__gpt-5-mini.results-baseline-untruncated-50questions.json`
 - **Command**:
 ```bash
-mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./results-baseline-untruncated-50questions --workers 10
+mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./experiment_results/results-baseline-untruncated --workers 10
 ```
 
 ### 3. 16k Truncated Context
 - **Results**: 24/50 resolved
-- **Preds file**: `./results-context-truncated-16k-50questions/preds.json`
-- **SWE-bench file**: `./results-context-truncated-16k-50questions/openai__gpt-5-mini.results-context-truncated-16k-50questions.json`
+- **Preds file**: `./experiment_results/results-context-truncated-16k/preds.json`
+- **SWE-bench file**: `./experiment_results/results-context-truncated-16k/openai__gpt-5-mini.results-context-truncated-16k-50questions.json`
 - **Command**:
 ```bash
-mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./results-context-truncated-16k-50questions --config ./src/minisweagent_tool/config/extra/swebench_context.yaml --max-context-tokens 16000 --workers 10
+mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./experiment_results/results-context-truncated-16k --config ./src/minisweagent_tool/config/extra/swebench_context.yaml --max-context-tokens 16000 --workers 10
 ```
 
 ### 4. 16k Truncated Baseline
 - **Results**: 21/50 resolved
-- **Preds file**: `./results_baseline_truncated/preds.json`
-- **SWE-bench file**: `./results_baseline_truncated/openai__gpt-5-mini.results_baseline_truncated.json`
+- **Preds file**: `./experiment_results/results-baseline-truncated-16k/preds.json`
+- **SWE-bench file**: `./experiment_results/results-baseline-truncated-16k/openai__gpt-5-mini.results_baseline_truncated.json`
 - **Command**:
 ```bash
-mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./results_baseline_truncated --max-context-tokens 16000 --workers 10
+mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./experiment_results/results-baseline-truncated-16k --max-context-tokens 16000 --workers 10
 ```
 
 ### 5. 8k Truncated Context
 - **Results**: 22/50 resolved
-- **Preds file**: `./results-context-truncated-8k-50questions/preds.json`
-- **SWE-bench file**: `./results-context-truncated-8k-50questions/openai__gpt-5-mini.results-context-truncated-8k-50questions.json`
+- **Preds file**: `./experiment_results/results-context-truncated-8k/preds.json`
+- **SWE-bench file**: `./experiment_results/results-context-truncated-8k/openai__gpt-5-mini.results-context-truncated-8k-50questions.json`
 - **Command**:
 ```bash
-mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./results-context-truncated-8k-50questions --config ./src/minisweagent_tool/config/extra/swebench_context.yaml --max-context-tokens 8000 --workers 10
+mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./experiment_results/results-context-truncated-8k --config ./src/minisweagent_tool/config/extra/swebench_context.yaml --max-context-tokens 8000 --workers 10
 ```
 
 ### 6. 8k Truncated Baseline
 - **Results**: 8/50 resolved
-- **Preds file**: `./results_no_context_trunc8k_50_run/preds.json`
-- **SWE-bench file**: `./results_no_context_trunc8k_50_run/openai__gpt-5-mini.trunc_8k_tool_50_run_no_context_1.json`
+- **Preds file**: `./experiment_results/results-baseline-truncated-8k/preds.json`
+- **SWE-bench file**: `./experiment_results/results-baseline-truncated-8k/openai__gpt-5-mini.trunc_8k_tool_50_run_no_context_1.json`
 - **Command**:
 ```bash
-mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./results_no_context_trunc8k_50_run --max-context-tokens 8000 --workers 10
+mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./experiment_results/results-baseline-truncated-8k --max-context-tokens 8000 --workers 10
 ```
 
 ### 7. 4k Truncated Context
 - **Results**: 6/50 resolved
-- **Preds file**: `./results_context_trunc4k_50_run/preds.json`
-- **SWE-bench file**: `./results_context_trunc4k_50_run/openai__gpt-5-mini.trunc_4k_tool_50_run.json`
+- **Preds file**: `./experiment_results/results-context-truncated-4k/preds.json`
+- **SWE-bench file**: `./experiment_results/results-context-truncated-4k/openai__gpt-5-mini.trunc_4k_tool_50_run.json`
 - **Command**:
 ```bash
-mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./results_context_trunc4k_50_run --config ./src/minisweagent_tool/config/extra/swebench_context.yaml --max-context-tokens 4000 --workers 10
+mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./experiment_results/results-context-truncated-4k --config ./src/minisweagent_tool/config/extra/swebench_context.yaml --max-context-tokens 4000 --workers 10
 ```
 
 ### 8. 4k Truncated Baseline
 - **Results**: 1/50 resolved
-- **Preds file**: `./results_no_context_trunc4k_50_run/preds.json`
-- **SWE-bench file**: `./results_no_context_trunc4k_50_run/openai__gpt-5-mini.trunc_4k_tool_50_run_no_context.json`
+- **Preds file**: `./experiment_results/results-baseline-truncated-4k/preds.json`
+- **SWE-bench file**: `./experiment_results/results-baseline-truncated-4k/openai__gpt-5-mini.trunc_4k_tool_50_run_no_context.json`
 - **Command**:
 ```bash
-mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./results_no_context_trunc4k_50_run --max-context-tokens 4000 --workers 10
+mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./experiment_results/results-baseline-truncated-4k --max-context-tokens 4000 --workers 10
 ```
 
 ---

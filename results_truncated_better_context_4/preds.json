@@ -1,7 +1,0 @@
-{
-  "astropy__astropy-14096": {
-    "model_name_or_path": "openai/gpt-5-mini",
-    "instance_id": "astropy__astropy-14096",
-    "model_patch": "diff --git a/astropy/coordinates/sky_coordinate.py b/astropy/coordinates/sky_coordinate.py\nindex ab475f7d0..46c4b4808 100644\n--- a/astropy/coordinates/sky_coordinate.py\n+++ b/astropy/coordinates/sky_coordinate.py\n@@ -894,6 +894,13 @@ class SkyCoord(ShapedLikeNDArray):\n             if frame_cls is not None and self.frame.is_transformable_to(frame_cls):\n                 return self.transform_to(attr)\n \n+        # If the attribute is defined on the class as a descriptor (for example, a @property), try calling the descriptor directly so that any AttributeError it raises (e.g. for a missing nested attribute) is propagated instead of being masked here.\n+        for cls in self.__class__.__mro__:\n+            if attr in getattr(cls, '__dict__', {}):\n+                attr_obj = cls.__dict__[attr]\n+                if hasattr(attr_obj, '__get__'):\n+                    return object.__getattribute__(self, attr)\n+\n         # Fail\n         raise AttributeError(\n             f\"'{self.__class__.__name__}' object has no attribute '{attr}'\"\ndiff --git a/repro.py b/repro.py\nnew file mode 100644\nindex 000000000..da5ca8c52\n--- /dev/null\n+++ b/repro.py\n@@ -0,0 +1,9 @@\n+import astropy.coordinates as coord\n+\n+class custom_coord(coord.SkyCoord):\n+    @property\n+    def prop(self):\n+        return self.random_attr\n+\n+c = custom_coord('00h42m30s', '+41d12m00s', frame='icrs')\n+print(c.prop)\n"
-  }
-}
