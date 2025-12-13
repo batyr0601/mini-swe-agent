@@ -1,3 +1,157 @@
+# Arbor
+
+<div align="center">
+
+<img src="arbor.png" alt="Arbor Logo" width="200"/>
+
+**Arbor: Git-Like Context Management for Code Agents**
+
+</div>
+
+**Arbor** is a Git-inspired context management system that enables AI agents to branch workflows, commit checkpoints, and merge contexts—treating conversation history as a versioned resource.
+
+**Resources:**
+- MCP Server: [https://github.com/oagrawal/Arbor_MCP](https://github.com/oagrawal/Arbor_MCP)
+- This Integration: [https://github.com/batyr0601/mini-swe-agent](https://github.com/batyr0601/mini-swe-agent)
+
+## Experimental Results
+
+### Overview
+
+We had two setups:
+- **Baseline**: No Arbor system
+- **Experimental**: With Arbor (context system)
+
+For each system, we tested:
+- Untruncated
+- 16k truncated (simulated 16K token context window)
+- 8k truncated (simulated 8K token context window)
+- 4k truncated (simulated 4K token context window)
+
+**Total: 8 experimental setups**
+
+Each setup has:
+- A `preds.json` file
+- A SWE-bench results JSON file
+- Command used to run the experiment
+- Success rate (resolved instances / total instances)
+
+---
+
+## Results Summary
+
+1. **Untruncated Context**: 28/50 resolved (56%)
+2. **Untruncated Baseline**: 22/50 resolved (44%)
+3. **16k Truncated Context**: 24/50 resolved (48%)
+4. **16k Truncated Baseline**: 21/50 resolved (42%)
+5. **8k Truncated Context**: 22/50 resolved (44%)
+6. **8k Truncated Baseline**: 8/50 resolved (16%)
+7. **4k Truncated Context**: 6/50 resolved (12%)
+8. **4k Truncated Baseline**: 1/50 resolved (2%)
+
+---
+
+## Detailed Results
+
+### 1. Untruncated Context
+- **Results**: 28/50 resolved
+- **Preds file**: `./experiment_results/results-context-untruncated/preds.json`
+- **SWE-bench file**: `./experiment_results/results-context-untruncated/openai__gpt-5-mini.results-context-untruncated-50questions.json`
+- **Command**:
+```bash
+mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./experiment_results/results-context-untruncated --config ./src/minisweagent_tool/config/extra/swebench_context.yaml --workers 10
+```
+
+### 2. Untruncated Baseline
+- **Results**: 22/50 resolved
+- **Preds file**: `./experiment_results/results-baseline-untruncated/preds.json`
+- **SWE-bench file**: `./experiment_results/results-baseline-untruncated/openai__gpt-5-mini.results-baseline-untruncated-50questions.json`
+- **Command**:
+```bash
+mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./experiment_results/results-baseline-untruncated --workers 10
+```
+
+### 3. 16k Truncated Context
+- **Results**: 24/50 resolved
+- **Preds file**: `./experiment_results/results-context-truncated-16k/preds.json`
+- **SWE-bench file**: `./experiment_results/results-context-truncated-16k/openai__gpt-5-mini.results-context-truncated-16k-50questions.json`
+- **Command**:
+```bash
+mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./experiment_results/results-context-truncated-16k --config ./src/minisweagent_tool/config/extra/swebench_context.yaml --max-context-tokens 16000 --workers 10
+```
+
+### 4. 16k Truncated Baseline
+- **Results**: 21/50 resolved
+- **Preds file**: `./experiment_results/results-baseline-truncated-16k/preds.json`
+- **SWE-bench file**: `./experiment_results/results-baseline-truncated-16k/openai__gpt-5-mini.results_baseline_truncated.json`
+- **Command**:
+```bash
+mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./experiment_results/results-baseline-truncated-16k --max-context-tokens 16000 --workers 10
+```
+
+### 5. 8k Truncated Context
+- **Results**: 22/50 resolved
+- **Preds file**: `./experiment_results/results-context-truncated-8k/preds.json`
+- **SWE-bench file**: `./experiment_results/results-context-truncated-8k/openai__gpt-5-mini.results-context-truncated-8k-50questions.json`
+- **Command**:
+```bash
+mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./experiment_results/results-context-truncated-8k --config ./src/minisweagent_tool/config/extra/swebench_context.yaml --max-context-tokens 8000 --workers 10
+```
+
+### 6. 8k Truncated Baseline
+- **Results**: 8/50 resolved
+- **Preds file**: `./experiment_results/results-baseline-truncated-8k/preds.json`
+- **SWE-bench file**: `./experiment_results/results-baseline-truncated-8k/openai__gpt-5-mini.trunc_8k_tool_50_run_no_context_1.json`
+- **Command**:
+```bash
+mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./experiment_results/results-baseline-truncated-8k --max-context-tokens 8000 --workers 10
+```
+
+### 7. 4k Truncated Context
+- **Results**: 6/50 resolved
+- **Preds file**: `./experiment_results/results-context-truncated-4k/preds.json`
+- **SWE-bench file**: `./experiment_results/results-context-truncated-4k/openai__gpt-5-mini.trunc_4k_tool_50_run.json`
+- **Command**:
+```bash
+mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./experiment_results/results-context-truncated-4k --config ./src/minisweagent_tool/config/extra/swebench_context.yaml --max-context-tokens 4000 --workers 10
+```
+
+### 8. 4k Truncated Baseline
+- **Results**: 1/50 resolved
+- **Preds file**: `./experiment_results/results-baseline-truncated-4k/preds.json`
+- **SWE-bench file**: `./experiment_results/results-baseline-truncated-4k/openai__gpt-5-mini.trunc_4k_tool_50_run_no_context.json`
+- **Command**:
+```bash
+mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./experiment_results/results-baseline-truncated-4k --max-context-tokens 4000 --workers 10
+```
+
+---
+
+## Observations
+
+1. **Context system consistently outperforms baseline** across all truncation levels
+2. **Performance degrades significantly** as context window decreases (especially below 8k)
+3. **Empty patches issue** observed in:
+   - Untruncated baseline (2 empty patches)
+   - 8k truncated baseline (many empty patches)
+4. **Untruncated baseline** (22/50) may have been an unlucky run, as it's lower than expected compared to 16k truncated baseline (21/50)
+
+---
+
+## Implementation Notes
+
+This fork includes several modifications from the upstream `mini-swe-agent`:
+
+- **Package renamed**: `mini-swe-agent` → `mini-swe-agent-tool` (package name and module `minisweagent` → `minisweagent_tool`)
+- **CLI commands updated**: `mini` → `mini-tool`, `mini-extra` → `mini-tool-extra`
+- **Analysis scripts**: Added utility scripts in `scripts/`:
+  - `analyze_results.py`: Analyze run results (costs, tokens, timing, exit statuses)
+  - `show_assistant_messages.py`: Display all messages from trajectory files
+  - `show_token_usage.py`: Extract detailed token usage from trajectory files
+- **Experimental results**: All results organized in `experiment_results/` with uniform naming convention
+
+---
+
 <div align="center">
 <a href="https://mini-swe-agent.com/latest/"><img src="https://github.com/SWE-agent/mini-swe-agent/raw/main/docs/assets/mini-swe-agent-banner.svg" alt="mini-swe-agent banner" style="height: 7em"/></a>
 </div>
