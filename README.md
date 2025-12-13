@@ -40,17 +40,17 @@ Each setup has:
 
 ### 1. Untruncated Context
 - **Results**: 28/50 resolved
-- **Preds file**: `/Users/batyr/Coding/context/mini-swe-agent/results-context-untruncated-50questions/preds.json`
-- **SWE-bench file**: `/Users/batyr/Coding/context/SWE-bench/openai__gpt-5-mini.results-context-untruncated-50questions.json`
+- **Preds file**: `./results-context-untruncated-50questions/preds.json`
+- **SWE-bench file**: `./results-context-untruncated-50questions/openai__gpt-5-mini.results-context-untruncated-50questions.json`
 - **Command**:
 ```bash
-mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./results-context-untruncated-50questions --config /Users/batyr/Coding/context/mini-swe-agent/src/minisweagent_tool/config/extra/swebench_context.yaml --workers 10
+mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./results-context-untruncated-50questions --config ./src/minisweagent_tool/config/extra/swebench_context.yaml --workers 10
 ```
 
 ### 2. Untruncated Baseline
 - **Results**: 22/50 resolved
-- **Preds file**: `/Users/batyr/Coding/context/mini-swe-agent/results-baseline-untruncated-50questions/preds.json`
-- **SWE-bench file**: `/Users/batyr/Coding/context/SWE-bench/openai__gpt-5-mini.results-baseline-untruncated-50questions.json`
+- **Preds file**: `./results-baseline-untruncated-50questions/preds.json`
+- **SWE-bench file**: `./results-baseline-untruncated-50questions/openai__gpt-5-mini.results-baseline-untruncated-50questions.json`
 - **Command**:
 ```bash
 mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./results-baseline-untruncated-50questions --workers 10
@@ -58,26 +58,26 @@ mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split tes
 
 ### 3. 16k Truncated Context
 - **Results**: 24/50 resolved
-- **Preds file**: `/Users/batyr/Coding/context/mini-swe-agent/results-context-truncated-16k-50questions/preds.json`
-- **SWE-bench file**: `/Users/batyr/Coding/context/SWE-bench/openai__gpt-5-mini.results-context-truncated-16k-50questions.json`
+- **Preds file**: `./results-context-truncated-16k-50questions/preds.json`
+- **SWE-bench file**: `./results-context-truncated-16k-50questions/openai__gpt-5-mini.results-context-truncated-16k-50questions.json`
 - **Command**:
 ```bash
-mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./results-context-truncated-16k-50questions --config /Users/batyr/Coding/context/mini-swe-agent/src/minisweagent_tool/config/extra/swebench_context.yaml --max-context-tokens 16000 --workers 10
+mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./results-context-truncated-16k-50questions --config ./src/minisweagent_tool/config/extra/swebench_context.yaml --max-context-tokens 16000 --workers 10
 ```
 
 ### 4. 16k Truncated Baseline
 - **Results**: 21/50 resolved
-- **Preds file**: `/Users/batyr/Coding/context/mini-swe-agent/results_baseline_truncated/preds.json`
-- **SWE-bench file**: `/Users/batyr/Coding/context/SWE-bench/openai__gpt-5-mini.results_baseline_truncated.json`
+- **Preds file**: `./results_baseline_truncated/preds.json`
+- **SWE-bench file**: `./results_baseline_truncated/openai__gpt-5-mini.results_baseline_truncated.json`
 - **Command**: [no command for this]
 
 ### 5. 8k Truncated Context
 - **Results**: 22/50 resolved
-- **Preds file**: `/Users/batyr/Coding/context/mini-swe-agent/results-context-truncated-8k-50questions/preds.json`
-- **SWE-bench file**: `/Users/batyr/Coding/context/SWE-bench/openai__gpt-5-mini.results-context-truncated-8k-50questions.json`
+- **Preds file**: `./results-context-truncated-8k-50questions/preds.json`
+- **SWE-bench file**: `./results-context-truncated-8k-50questions/openai__gpt-5-mini.results-context-truncated-8k-50questions.json`
 - **Command**:
 ```bash
-mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./results-context-truncated-8k-50questions --config /Users/batyr/Coding/context/mini-swe-agent/src/minisweagent_tool/config/extra/swebench_context.yaml --max-context-tokens 8000 --workers 10
+mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./results-context-truncated-8k-50questions --config ./src/minisweagent_tool/config/extra/swebench_context.yaml --max-context-tokens 8000 --workers 10
 ```
 
 ### 6. 8k Truncated Baseline
