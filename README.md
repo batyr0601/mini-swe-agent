@@ -69,7 +69,10 @@ mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split tes
 - **Results**: 21/50 resolved
 - **Preds file**: `./results_baseline_truncated/preds.json`
 - **SWE-bench file**: `./results_baseline_truncated/openai__gpt-5-mini.results_baseline_truncated.json`
-- **Command**: [no command for this]
+- **Command**:
+```bash
+mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./results_baseline_truncated --max-context-tokens 16000 --workers 10
+```
 
 ### 5. 8k Truncated Context
 - **Results**: 22/50 resolved
@@ -82,41 +85,29 @@ mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split tes
 
 ### 6. 8k Truncated Baseline
 - **Results**: 8/50 resolved
-- **Preds file**: `/Users/omagr/Documents/Personal/Agents/mini-swe-agent_tool/results_no_context_trunc8k_50_run/preds.json`
-- **SWE-bench file**: `/Users/omagr/Documents/Personal/Agents/SWE-bench/openai__gpt-5-mini.trunc_8k_tool_50_run_no_context_1.json`
-- **Notes**: A lot of empty patches, idk why
+- **Preds file**: `./results_no_context_trunc8k_50_run/preds.json`
+- **SWE-bench file**: `./results_no_context_trunc8k_50_run/openai__gpt-5-mini.trunc_8k_tool_50_run_no_context_1.json`
 - **Command**:
 ```bash
-mini-tool-extra swebench \
-  --model openai/gpt-5-mini \
-  --subset verified \
-  --split test \
-  --slice 0:50 \
-  -o ./results_no_context_trunc8k_50_run \
-  --max-context-tokens 8000 \
-  --workers 10
+mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./results_no_context_trunc8k_50_run --max-context-tokens 8000 --workers 10
 ```
 
 ### 7. 4k Truncated Context
 - **Results**: 6/50 resolved
-- **Preds file**: `/Users/omagr/Documents/Personal/Agents/mini-swe-agent_tool/results_context_trunc4k_50_run/preds.json`
-- **SWE-bench file**: `/Users/omagr/Documents/Personal/Agents/SWE-bench/openai__gpt-5-mini.trunc_4k_tool_50_run.json`
-- **Command**: [can't find the command to run for some reason]
+- **Preds file**: `./results_context_trunc4k_50_run/preds.json`
+- **SWE-bench file**: `./results_context_trunc4k_50_run/openai__gpt-5-mini.trunc_4k_tool_50_run.json`
+- **Command**:
+```bash
+mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./results_context_trunc4k_50_run --config ./src/minisweagent_tool/config/extra/swebench_context.yaml --max-context-tokens 4000 --workers 10
+```
 
 ### 8. 4k Truncated Baseline
 - **Results**: 1/50 resolved
-- **Preds file**: `/Users/omagr/Documents/Personal/Agents/mini-swe-agent_tool/results_no_context_trunc4k_50_run/preds.json`
-- **SWE-bench file**: `/Users/omagr/Documents/Personal/Agents/SWE-bench/openai__gpt-5-mini.trunc_4k_tool_50_run_no_context.json`
+- **Preds file**: `./results_no_context_trunc4k_50_run/preds.json`
+- **SWE-bench file**: `./results_no_context_trunc4k_50_run/openai__gpt-5-mini.trunc_4k_tool_50_run_no_context.json`
 - **Command**:
 ```bash
-mini-tool-extra swebench \
-  --model openai/gpt-5-mini \
-  --subset verified \
-  --split test \
-  --slice 0:50 \
-  -o ./results_no_context_trunc4k_50_run \
-  --max-context-tokens 4000 \
-  --workers 10
+mini-tool-extra swebench --model openai/gpt-5-mini --subset verified --split test --slice 0:50 -o ./results_no_context_trunc4k_50_run --max-context-tokens 4000 --workers 10
 ```
 
 ---
