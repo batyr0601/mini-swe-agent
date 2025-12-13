@@ -101,6 +101,12 @@ def log_command(reasoning_step: str, log_type: str | None = None) -> None:
     # Append to log
     filesystem.append_log(current_branch, log_entry)
     
+    # Auto-track files and keywords mentioned in the log
+    files = _extract_files_from_text(reasoning_step)
+    keywords = _extract_keywords_from_text(reasoning_step)
+    if files or keywords:
+        update_branch_tracking(files=files[:5], keywords=keywords[:5])
+    
     # Also update main.md interaction log (but keep it brief)
     _update_interaction_log(formatted_step)
     
@@ -938,3 +944,184 @@ def git_commit_context(branch_name: str, commit_id: str) -> None:
         # Any other error, skip git commit (non-critical)
         pass
 
+
+def _extract_files_from_text(text: str) -> List[str]:
+    """Extract file paths mentioned in text"""
+    import re
+    # Match common file patterns
+    patterns = [
+        r'[\w/.-]+\.(?:py|js|ts|jsx|tsx|go|rs|java|c|cpp|h|hpp|rb|php|swift|kt|scala|yaml|yml|json|toml|md|txt|html|css|scss|sql)',
+        r'(?:src|lib|app|test|tests|spec|docs)/[\w/.-]+',
+    ]
+    files = set()
+    for pattern in patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        for m in matches:
+            # Clean up and normalize
+            cleaned = m.strip().lstrip('./')
+            if cleaned and len(cleaned) > 2:
+                files.add(cleaned)
+    return list(files)
+
+
+def _extract_keywords_from_text(text: str) -> List[str]:
+    """Extract meaningful keywords from text"""
+    import re
+    # Remove common words and extract meaningful terms
+    stop_words = {'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+                  'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+                  'should', 'may', 'might', 'must', 'shall', 'can', 'need', 'to', 'of',
+                  'in', 'for', 'on', 'with', 'at', 'by', 'from', 'as', 'into', 'through',
+                  'during', 'before', 'after', 'above', 'below', 'between', 'under',
+                  'again', 'further', 'then', 'once', 'here', 'there', 'when', 'where',
+                  'why', 'how', 'all', 'each', 'every', 'both', 'few', 'more', 'most',
+                  'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same',
+                  'so', 'than', 'too', 'very', 'just', 'and', 'but', 'if', 'or', 'because',
+                  'this', 'that', 'these', 'those', 'it', 'its', 'i', 'me', 'my', 'we',
+                  'our', 'you', 'your', 'he', 'him', 'his', 'she', 'her', 'they', 'them',
+                  'their', 'what', 'which', 'who', 'whom', 'file', 'code', 'function',
+                  'method', 'class', 'found', 'error', 'fix', 'bug', 'added', 'updated',
+                  'changed', 'created', 'deleted', 'removed', 'modified'}
+    
+    # Extract words (alphanumeric with underscores)
+    words = re.findall(r'\b[a-zA-Z_][a-zA-Z0-9_]{2,}\b', text.lower())
+    keywords = [w for w in words if w not in stop_words and len(w) > 2]
+    
+    # Count frequency and return top keywords
+    from collections import Counter
+    counts = Counter(keywords)
+    return [kw for kw, _ in counts.most_common(20)]
+
+
+def _calculate_branch_similarity(branch_name: str, files: List[str], keywords: List[str]) -> float:
+    """Calculate how similar a branch is to given files and keywords"""
+    metadata = filesystem.read_metadata(branch_name)
+    commits = filesystem.read_commits(branch_name)
+    logs = filesystem.read_logs(branch_name)
+    
+    score = 0.0
+    
+    # Check tracked files overlap
+    if metadata.tracked_files and files:
+        tracked_set = set(f.lower() for f in metadata.tracked_files)
+        files_set = set(f.lower() for f in files)
+        file_overlap = len(tracked_set & files_set)
+        if file_overlap > 0:
+            score += file_overlap * 10  # High weight for file matches
+    
+    # Check keywords overlap
+    if metadata.keywords and keywords:
+        kw_set = set(metadata.keywords)
+        new_kw_set = set(keywords)
+        kw_overlap = len(kw_set & new_kw_set)
+        score += kw_overlap * 2
+    
+    # Check branch purpose for keyword matches
+    if commits:
+        purpose = commits[0].branch_purpose.lower()
+        for kw in keywords:
+            if kw in purpose:
+                score += 5
+    
+    # Check recent logs for file mentions
+    recent_logs = logs[-10:] if len(logs) > 10 else logs
+    log_text = ' '.join(log.reasoning_step for log in recent_logs)
+    log_files = _extract_files_from_text(log_text)
+    if log_files and files:
+        log_files_set = set(f.lower() for f in log_files)
+        files_set = set(f.lower() for f in files)
+        log_file_overlap = len(log_files_set & files_set)
+        score += log_file_overlap * 5
+    
+    return score
+
+
+def detect_matching_branch(context_hint: str) -> dict:
+    """
+    Detect which branch best matches the given context.
+    
+    Args:
+        context_hint: Text describing what the user wants to work on,
+                     or file paths being worked on
+    
+    Returns:
+        Dictionary with:
+        - match_found: bool
+        - recommended_branch: str or None
+        - similarity_score: float
+        - all_branches: list of (branch_name, score) tuples
+        - suggestion: str describing what to do
+    """
+    filesystem.ensure_context_directory()
+    
+    branches = filesystem.list_branches()
+    current_branch = filesystem.get_current_branch()
+    
+    # Extract files and keywords from context hint
+    files = _extract_files_from_text(context_hint)
+    keywords = _extract_keywords_from_text(context_hint)
+    
+    result = {
+        'match_found': False,
+        'recommended_branch': None,
+        'similarity_score': 0.0,
+        'all_branches': [],
+        'current_branch': current_branch,
+        'extracted_files': files[:5],  # Top 5
+        'extracted_keywords': keywords[:10],  # Top 10
+        'suggestion': ''
+    }
+    
+    if not branches:
+        result['suggestion'] = "No branches exist. Create one with context_branch(name='...', purpose='...')"
+        return result
+    
+    # Calculate similarity for each branch
+    branch_scores = []
+    for branch in branches:
+        score = _calculate_branch_similarity(branch, files, keywords)
+        branch_scores.append((branch, score))
+    
+    # Sort by score descending
+    branch_scores.sort(key=lambda x: x[1], reverse=True)
+    result['all_branches'] = branch_scores
+    
+    best_branch, best_score = branch_scores[0]
+    
+    # Determine recommendation
+    if best_score >= 10:
+        result['match_found'] = True
+        result['recommended_branch'] = best_branch
+        result['similarity_score'] = best_score
+        
+        if best_branch == current_branch:
+            result['suggestion'] = f"✓ Already on the best matching branch '{best_branch}' (score: {best_score:.1f})"
+        else:
+            result['suggestion'] = f"⚠️ Switch to branch '{best_branch}' (score: {best_score:.1f}). Current branch '{current_branch}' may not be related."
+    else:
+        # No good match - suggest creating new branch
+        result['suggestion'] = f"No matching branch found. Consider creating a new branch for this work."
+        if keywords:
+            suggested_name = '-'.join(keywords[:3])
+            result['suggestion'] += f"\n  Suggested: context_branch(name='{suggested_name}', purpose='...')"
+    
+    return result
+
+
+def update_branch_tracking(files: List[str] = None, keywords: List[str] = None) -> None:
+    """Update current branch's tracked files and keywords"""
+    current_branch = filesystem.get_current_branch()
+    if not current_branch:
+        return
+    
+    metadata = filesystem.read_metadata(current_branch)
+    
+    if files:
+        for f in files:
+            metadata.add_tracked_file(f)
+    
+    if keywords:
+        for kw in keywords:
+            metadata.add_keyword(kw)
+    
+    filesystem.write_metadata(current_branch, metadata)
