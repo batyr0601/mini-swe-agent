@@ -1,0 +1,187 @@
+
+
+## TODO List
+
+- [x] 1. Understand the bug: reproduce misleading exception when removing a required column from TimeSeries
+- [x] 2. Locate the code: find TimeSeries class and its validation/remove_column logic in testbed (identify files like timeseries.py or table wrapper)
+- [x] 3. Root cause analysis: inspect validation and remove_column to see how the invalid-state message is constructed when required columns are missing
+- [x] 4. Implement fix: update validation/remove_column to raise a clear error naming missing required columns or prevent removing required columns
+- [ ] 5. Verify fix: create and run a small repro script that removes a required column and confirm the error message is clear; run tests if available
+- [x] 1. Reproduce the bug: run a small script that writes a QTable with header_rows=[
+- [ ] 2. Locate RST writer implementation: grep for
+- [ ] 3. Inspect RST.__init__ signature and compare with FixedWidth writer to see how header_rows is supported
+- [ ] 4. Implement fix: modify RST.__init__ to accept header_rows (and any other relevant kwargs) and ensure header_rows are rendered correctly in output
+- [ ] 5. Verify fix: create and run a repro script to ensure ascii.rst writer accepts header_rows and produces expected output
+- [ ] 6. Run tests or linters to ensure no regressions
+- [ ] 1. Reproduce the bug: run repro.py or create a minimal repro that triggers AttributeError when accessing a property on a SkyCoord subclass
+- [ ] 2. Locate code: grep for
+- [ ] 3. Inspect sky_coordinate.py __getattr__: read the method and surrounding lines to see try/except handling that may mask descriptor/property AttributeError
+- [ ] 4. Root cause analysis: identify whether __getattr__ catches AttributeError from descriptors/properties and re-raises with the wrong attribute name; record exact lines and behavior
+- [ ] 5. Implement fix: modify __getattr__ to avoid masking descriptor/property AttributeError (e.g., check class attributes/descriptors first or preserve original exception), update code and add comments
+- [ ] 6. Add regression test: create a unit test that reproduces the original incorrect error message when accessing a missing attribute on a SkyCoord subclass and asserts the corrected behavior/message
+- [ ] 7. Verify fix: run pytest for astropy/coordinates tests and run repro.py to confirm the bug is resolved
+- [ ] 1. Understand the bug: get the user-reported issue, expected vs actual behavior, and reproduction steps
+- [ ] 2. Locate the code: search repository for likely files/functions (e.g., grep for failing symbols, stacktrace names)
+- [ ] 3. Reproduce locally: run the provided repro script or failing tests to capture exact error/stacktrace
+- [ ] 4. Root cause analysis: inspect implicated files/lines, identify why the error occurs (e.g., incorrect exception handling, wrong attribute name)
+- [ ] 5. Implement fix: make minimal, well-tested code changes to address root cause and add unit tests covering the failure
+- [ ] 6. Verify fix: run unit test suite and repro to confirm the issue is resolved and no regressions introduced
+- [ ] 7. Log findings and complete TODOs: after each command, record observed outputs with context_log and mark each TODO complete when done
+- [ ] 1. Reproduce the AttributeError: create a minimal repro that accesses a SkyCoord attribute (e.g., a frame attribute or descriptor) that currently raises an AttributeError with an incorrect message
+- [ ] 2. Locate the code: inspect __getattr__ implementations in astropy/coordinates/sky_coordinate.py (around line 867) and astropy/coordinates/baseframe.py (around lines 1724 and 2025), and identify any property/descriptor getters involved
+- [ ] 3. Root cause analysis: determine whether AttributeError raised inside a frame attribute descriptor is being masked or converted to a misleading AttributeError by __getattr__; identify exact call sites (getattr on self.frame, getattr(self,
+- [ ] 4. Implement fix: change __getattr__ logic to avoid catching/transforming AttributeError from descriptor getters (e.g., use object.__getattribute__ for descriptor access or check for attribute existence without invoking descriptor), add unit test reproducing original failure
+- [ ] 5. Verify fix: run targeted pytest for coordinates (pytest astropy/coordinates -q or -k sky_coordinate), run the new unit test, and ensure no regressions; log results and mark todos complete as done
+- [ ] 1. Understand the bug: reproduce AttributeError message issue when accessing a descriptor property that raises AttributeError (wrong attribute name shown)
+- [ ] 2. Locate the code: inspect __getattr__ in astropy/coordinates/baseframe.py (representation and differential handling around lines ~1680-1760) and the second __getattr__ (around ~1960-2060), and inspect __getattr__ in astropy/coordinates/sky_coordinate.py (~820-980)
+- [ ] 3. Root cause analysis: examine branches that handle representation_component_names and diff_names in baseframe.__getattr__ for try/except or logic that may catch AttributeError from descriptor access and re-raise with wrong name
+- [ ] 4. Implement fix: change baseframe.__getattr__ to avoid catching AttributeError raised by descriptors (let descriptor errors propagate), add targeted unit tests that reproduce the incorrect AttributeError message, and update code comments
+- [ ] 5. Verify fix: run the repro script and relevant tests (e.g., pytest astropy/coordinates/tests -k <repro or affected tests>) and mark TODOs complete as findings are logged
+- [ ] 1. Understand the bug: reproduce the unexpected AttributeError when accessing an attribute provided by a descriptor on BaseCoordinateFrame/GenericFrame (create a minimal repro based on failing test or example)
+- [ ] 2. Locate the code: find BaseCoordinateFrame.__getattr__ and any other __getattr__ implementations in astropy/coordinates/baseframe.py and note surrounding logic that handles representation_component_names/get_representation_component_names
+- [ ] 3. Root cause analysis: inspect the __getattr__ implementation for try/except blocks that catch AttributeError from descriptors; identify exact lines where AttributeError is caught and re-raised with potentially wrong attribute name
+- [ ] 4. Implement fix: change __getattr__ to check descriptor lookup first or selectively handle AttributeError so descriptor errors propagate correctly; prepare a small patch in astropy/coordinates/baseframe.py with tests updated/added
+- [ ] 5. Verify fix: run the minimal repro and the relevant coordinate/frame unit tests (or the project
+- [ ] 1. Verify patch applied by viewing astropy/coordinates/sky_coordinate.py lines 820-920 to confirm try/except getattr block replaced hasattr check
+- [ ] 2. Search file for any remaining occurrences of \
+- [ ] 3. If patched, run a quick repro/test to ensure descriptor/property AttributeError propagates correctly
+- [ ] 4. If not patched or test fails, implement an alternative patch (backup file and apply robust regex replacement) and log results
+- [ ] 1. Understand the bug: Reproduce and describe AttributeError behavior when accessing missing attributes on GenericFrame/BaseCoordinateFrame (look for misleading messages or suppressed descriptor errors)
+- [ ] 2. Locate the code: inspect astropy/coordinates/baseframe.py and astropy/coordinates/sky_coordinate.py __getattr__ implementations and related __setattr__/__delattr__
+- [ ] 3. Root cause analysis: identify where AttributeError is caught/re-raised improperly, and how descriptors/properties are handled (check handling of private _attr, frame_attributes, and hasattr usage)
+- [ ] 4. Implement fix: modify __getattr__/__setattr__ to check for descriptors/properties first and re-raise accurate AttributeError; add unit tests reproducing the previous incorrect message
+- [ ] 5. Verify fix: run relevant unit tests and a small repro script to confirm AttributeError messages and immutability behavior are correct
+- [ ] 1. Root cause analysis: inspect __getattr__/__setattr__/__delattr__ in astropy/coordinates/sky_coordinate.py (lines ~820-920) to confirm hasattr usage and exact locations
+- [ ] 2. Implement fix: replace
+- [ ] 3. Apply patch: create backup of astropy/coordinates/sky_coordinate.py and perform in-place regex substitution for both occurrences
+- [ ] 4. Verify fix: display lines 820-920 after patch and attempt to import astropy.coordinates to ensure no masking of AttributeError (or run relevant unit tests)
+- [ ] 3. Reproduce the bug: create a minimal repro that triggers the unexpected AttributeError when accessing missing frame/coordinate attributes (use BaseCoordinateFrame/GenericFrame and SkyCoord examples)
+- [ ] 4. Inspect implementations: review BaseCoordinateFrame.__getattr__/__setattr__ (astropy/coordinates/baseframe.py around 1720-1800 and 1988-2050) and GenericFrame.__getattr__/__setattr__ and __delattr__ (same file, ~1988-2050) and SkyCoord getattr logic (astropy/coordinates/sky_coordinate.py around 860-960)
+- [ ] 5. Root cause analysis: determine whether AttributeError messages are being masked/rewritten incorrectly (e.g., custom
+- [ ] 6. Implement fix: update the identified methods to let AttributeError from descriptors/underlying attributes propagate when appropriate, or standardize the message formatting; add unit test(s) demonstrating correct message/behavior
+- [ ] 7. Verify fix: run the minimal repro and run pytest for coordinates module (target tests affected), log results, and iterate until passing
+- [ ] 1. Reproduce the bug: create/run a minimal repro that triggers the incorrect AttributeError message when accessing a missing attribute on SkyCoord/BaseCoordinateFrame
+- [ ] 2. Locate the code: inspect __getattr__ implementations in astropy/coordinates/sky_coordinate.py (around line 867-914) and astropy/coordinates/baseframe.py (around line 1724 and 2025) for places that raise or re-raise AttributeError
+- [ ] 3. Root cause analysis: determine whether __getattr__ is catching AttributeError from descriptors/properties and re-raising with an incorrect message; identify exact lines where AttributeError originates and is transformed
+- [ ] 4. Implement fix: change __getattr__ logic to avoid masking underlying AttributeError (e.g., check for attribute presence before getattr, only re-raise AttributeError for truly missing attributes, or preserve original exceptions), and write a targeted unit test for the behavior
+- [ ] 5. Verify fix: run the repro and relevant coordinate tests, confirm error message correctness and that no other tests regress
+- [ ] 1. Understand the bug: Investigate why AttributeError messages are masked or re-raised with wrong attribute names when accessing coordinate/frame attributes
+- [ ] 2. Locate the code: Inspect __getattr__ implementations in astropy/coordinates/baseframe.py (around 1700-1760 and 1988-2060) and astropy/coordinates/sky_coordinate.py (around 840-960)
+- [ ] 3. Root cause analysis: Determine where AttributeError could be caught or converted (e.g., returning __getattribute__ for
+- [ ] 4. Implement fix: Modify __getattr__ to avoid catching AttributeError from descriptors/properties (check for attribute existence in class first, or re-raise original exceptions) and add tests
+- [ ] 5. Verify fix: Run unit tests for coordinates and reproduce the original AttributeError case to ensure correct error messages
+- [ ] 2. Inspect modified methods: open astropy/coordinates/sky_coordinate.py and review __getattr__, __setattr__, and __delattr__ changes to ensure AttributeError is re-raised only when attribute exists on the frame or its classes
+- [ ] 3. Verify compilation and import: run python -m py_compile on the modified file and attempt
+- [ ] 4. Reproduce the original issue: run the minimal repro for removing a required TimeSeries column (or run tests targeting TimeSeries) to confirm the misleading AttributeError is resolved
+- [ ] 5. Finalize: if repro/tests pass, mark relevant TODOs complete and context_commit with message
+- [ ] 1. Understand the bug: Reproduce and characterize AttributeError raised by SkyCoord.__getattr__/__setattr__ (wrong attribute name or descriptor errors swallowed or misreported)
+- [ ] 2. Locate the code: Find exact definitions and line numbers of __getattr__, __setattr__, and __delattr__ in astropy/coordinates/sky_coordinate.py
+- [ ] 3. Root cause analysis: Inspect try/except blocks that catch AttributeError and the logic that checks for attribute presence (__dict__ and MRO); determine whether descriptors/properties are being invoked incorrectly or their AttributeError is being re-raised with wrong name
+- [ ] 4. Implement fix: Modify attribute presence checks to use inspect.getattr_static or class-level lookup so descriptor AttributeError can propagate correctly; update __getattr__/__setattr__/__delattr__ accordingly
+- [ ] 5. Verify fix: Create minimal repro script, run targeted pytest for coordinates (or relevant tests), and ensure no regressions and that AttributeError messages are correct
+- [ ] 3. Root cause analysis: inspect places that catch/re-raise AttributeError (GenericFrame.__getattr__, other raise sites) and determine how descriptor/property AttributeErrors could be masked
+- [ ] 4. Create minimal repro: craft a representation/descriptor that raises AttributeError inside its getter and exercise attribute access on a SkyCoord/Frame to see which message surfaces
+- [ ] 5. Implement fix: change getattr usage or exception handling so that AttributeError raised by descriptor/property propagates with original message (only convert to
+- [ ] 6. Add unit test: reproduce the masking issue and assert that the original descriptor error message is shown
+- [ ] 7. Run tests: run astropy/coordinates tests relevant to attribute access to verify fix
+- [ ] 4. Implement fix: modify astropy/coordinates/sky_coordinate.py __getattr__/__setattr__/__delattr__ to use inspect.getattr_static (avoid invoking descriptors) when checking presence on self._sky_coord_frame; add
+- [ ] 5. Verify fix: run the new unit test and related coordinate tests (pytest astropy/coordinates/tests/test_sky_coord_descriptor_error.py -q) and/or run a small repro script that demonstrates descriptor-raised AttributeError is not masked
+- [ ] 1. Understand the bug: Investigate how GenericFrame.__getattr__ and BaseCoordinateFrame.__getattr__ raise generic AttributeError messages that may mask descriptor/property AttributeError from underlying objects
+- [ ] 2. Locate the code: Open astropy/coordinates/baseframe.py and astropy/coordinates/sky_coordinate.py to find __getattr__ and __setattr__ implementations and related lines
+- [ ] 3. Reproduce the issue: Create a minimal repro script that triggers a property/descriptor AttributeError through GenericFrame or BaseCoordinateFrame attribute access
+- [ ] 4. Implement fix: Modify __getattr__ to avoid masking AttributeError from descriptors (e.g., only raise a
+- [ ] 5. Verify fix: Run the minimal repro and relevant unit tests to confirm descriptor errors propagate correctly and no regressions occur
+- [ ] 1. Understand the bug: Investigate whether __getattr__ implementations in baseframe.py and sky_coordinate.py are masking AttributeError or producing misleading error messages when descriptors/attributes raise their own AttributeError
+- [ ] 1. Reproduce the bug: create/run a minimal repro that triggers AttributeError when accessing a property on a SkyCoord subclass
+- [ ] 2. Locate the code: grep for __getattr__ in astropy/coordinates to find sky_coordinate.py and baseframe.py definitions
+- [ ] 3. Inspect __getattr__: open surrounding lines in sky_coordinate.py and baseframe.py to analyze try/except handling that may mask descriptor AttributeError
+- [ ] 4. Implement fix: modify __getattr__ to avoid invoking descriptors when checking for attribute presence (use inspect.getattr_static or class-level lookup) and update code/comments
+- [ ] 5. Add regression test: create a unit test that reproduces the masked AttributeError and asserts correct propagation/message
+- [ ] 6. Verify fix: run the minimal repro and targeted pytest (pytest astropy/coordinates -k <testname>) and mark todos complete; context_commit when ready
+- [ ] 7. Modify __getattr__ in astropy/coordinates/sky_coordinate.py: reorder checks so that getattr_static on self._sky_coord_frame (to detect descriptor errors) is performed before accessing self.frame.name or other frame attributes; implement minimal change and add tests reproducing descriptor AttributeError propagation
+- [ ] 1. Reproduce the AttributeError: create a minimal repro that accesses a SkyCoord subclass attribute (or frame descriptor) that triggers the misleading AttributeError message
+- [ ] 2. Locate __getattr__: grep for __getattr__ in astropy/coordinates to find definitions in sky_coordinate.py and baseframe.py
+- [ ] 3. Inspect sky_coordinate.py __getattr__: view lines ~800-980 of astropy/coordinates/sky_coordinate.py to analyze try/except and attribute lookup logic
+- [ ] 4. Run minimal repro: run the repro script to capture the exact AttributeError, stack trace, and message for logging
+- [ ] 5. Analyze & plan fix: determine whether __getattr__ is masking descriptor/property AttributeError and draft fix (use inspect.getattr_static or preserve original exception), then add tests
+- [ ] 1. Understand the bug: reproduce the AttributeError behavior and confirm whether the error message shows the wrong attribute name or masks original AttributeError
+- [ ] 2. Locate the code: confirm __getattr__ implementation in astropy/coordinates/sky_coordinate.py (around lines 829-920) is the target for changes
+- [ ] 3. Root cause analysis: inspect the branches in __getattr__ that catch AttributeError and analyze use of inspect.getattr_static and re-raise logic to see why the original attribute name is lost
+- [ ] 4. Implement fix: modify __getattr__ to only re-raise the original AttributeError when appropriate and ensure the final AttributeError message includes the requested attr; prepare a clean patch without here-doc/indentation errors
+- [ ] 5. Verify fix: run the relevant unit tests or a small repro script to confirm AttributeError messaging is correct and no new errors (including indentation) occur
+- [ ] 4. Reproduce the bug: run repro.py to capture the exact
+- [ ] 5. Implement fix: modify GenericFrame.__getattr__/BaseCoordinateFrame.__getattr__ so descriptor/property AttributeError is not masked (let descriptor errors propagate); update code to check for descriptors before catching AttributeError
+- [ ] 6. Verify fix: run repro.py and run pytest (target affected tests) to confirm the error message is corrected and no regressions
+- [ ] 7. Locate or create repro: search repository for repro.py or tests mentioning the
+- [ ] 1. Reproduce the AttributeError with a minimal repro script that accesses a SkyCoord/frame attribute to trigger the misleading exception
+- [ ] 2. Locate relevant __getattr__ implementations: astropy/coordinates/sky_coordinate.py (~800-960) and astropy/coordinates/baseframe.py (~1560-1620, ~1860-1900)
+- [ ] 3. Run focused experiments: create a small Python snippet with a descriptor that raises AttributeError to see whether inspect.getattr_static differentiates descriptor vs missing attribute
+- [ ] 4. Root cause analysis: inspect the try/except blocks in SkyCoord.__getattr__ that catch AttributeError and determine whether they are masking descriptor-raised AttributeError (log exact lines and behaviors)
+- [ ] 5. Implement fix: modify exception handling to re-raise descriptor-originating AttributeError (e.g., using inspect.getattr_static to detect attribute presence) and add comments documenting rationale
+- [ ] 6. Add unit test reproducing the misleading AttributeError message and asserting corrected behavior
+- [ ] 7. Run targeted test(s) for coordinates/frame attributes to verify the fix and ensure no regressions
+- [ ] 1. Understand the bug: determine exactly what user-visible error/message occurs when removing non-existent or required columns (e.g., ambiguous or missing column names in error, or allowing removal of required columns)
+- [ ] 2. Locate code and tests: find and open astropy/table/table.py remove_column/remove_columns implementation and related tests (astropy/table/tests/test_table.py:test_remove_columns_invalid_names_messages)
+- [ ] 3. Reproduce the failure: run the specific test(s) or create a minimal repro that demonstrates the wrong error message or improper removal of required columns
+- [ ] 4. Root cause analysis: inspect implementation to see how missing/required columns are detected and how the error message is constructed; identify where messages are built or exceptions raised
+- [ ] 5. Implement fix: update remove_column/remove_columns to (a) prevent removing required columns or raise a clear, specific error naming the missing required columns, and (b) ensure error messages list the actual missing column names
+- [ ] 6. Verify fix: run the affected test(s) (astropy/table/tests/test_table.py::test_remove_columns_invalid_names_messages and any other impacted tests) and update/add tests as needed
+- [ ] 1. Understand the bug: investigate __getattr__ implementations that catch AttributeError and may be masking AttributeError raised by descriptors (leading to misleading \
+- [ ] 2. Locate the code: inspect astropy/coordinates/sky_coordinate.py::__getattr__ (around lines ~820-940) and astropy/coordinates/baseframe.py::__getattr__ (around lines ~1540-1620 and ~1840-1900) to find try/except patterns
+- [ ] 3. Reproduce the issue: write a minimal repro that defines a descriptor property that raises AttributeError internally and access it via SkyCoord/frame objects to show the masking
+- [ ] 4. Root cause analysis: determine where AttributeError from descriptor is being caught and why inspect.getattr_static is used (or misused), and decide how to detect descriptor presence and let its AttributeError propagate
+- [ ] 5. Implement fix: modify relevant __getattr__/__setattr__ logic to check for attribute descriptors via inspect.getattr_static or inspect.getmembers and only catch AttributeError when attribute truly absent; preserve original exception message from descriptor
+- [ ] 6. Add tests: create unit tests that assert descriptor-raised AttributeError is propagated (with original message) and that __getattr__ still provides expected behavior for other cases
+- [ ] 7. Verify fix: run targeted pytest (tests for coordinates and new tests) and full test subset if needed; iterate until passing
+- [ ] 1. Understand the bug: reproduce the failing scenario and capture the exact error message and traceback
+- [ ] 2. Locate the code: search repository for __getattr__, property descriptors, and related methods that could raise the captured error
+- [ ] 3. Root cause analysis: inspect the identified functions/files, read surrounding code, and pinpoint why the error is raised or misreported
+- [ ] 4. Implement fix: modify the offending code to correctly handle/propagate attribute errors and add/adjust unit tests that reproduce the original failure
+- [ ] 5. Verify fix: run the minimal repro and full test suite (or relevant tests) to confirm the bug is fixed and no regressions occur
+- [ ] 1. Understand the bug: inspect how SkyCoord.__getattr__ handles AttributeError from descriptors on self._sky_coord_frame and whether it masks the original exception or raises the wrong attribute name
+- [ ] 2. Locate the code: find all occurrences of inspect.getattr_static and __getattr__ in astropy/coordinates to compare handling patterns
+- [ ] 3. Reproduce the issue: create a minimal repro script where a frame attribute descriptor raises AttributeError during getattr to observe SkyCoord.__getattr__ behavior
+- [ ] 4. Implement fix: modify SkyCoord.__getattr__ to preserve/propagate descriptor-raised AttributeError (only re-raise when getattr_static confirms attribute exists), update code comment explaining rationale
+- [ ] 5. Verify fix: add unit test reproducing the bug, run pytest for affected tests, and log results
+- [ ] 1. Reproduce the bug: create a minimal repro that triggers an AttributeError (or wrong attribute name) when accessing an attribute via SkyCoord.__getattr__
+- [ ] 2. Locate the code: inspect astropy/coordinates/sky_coordinate.py, focusing on the __getattr__ implementation and nearby __setattr__/__delattr__
+- [ ] 3. Root cause analysis: determine whether the final
+- [ ] 4. Implement fix: update __getattr__ to avoid masking AttributeError (e.g., use object.__getattribute__ or re-raise original exception with correct attribute name) and prepare a patch
+- [ ] 5. Verify fix: run the minimal repro and relevant unit tests (pytest) to confirm the AttributeError message is correct and no tests regress
+- [ ] 1. Understand the bug: inspect why AttributeError message is incorrect when accessing missing attribute via __getattr__ in BaseCoordinateFrame vs SkyCoord
+- [ ] 2. Locate the code: find __getattr__ definitions in astropy/coordinates/baseframe.py and astropy/coordinates/sky_coordinate.py
+- [ ] 3. Compare implementations: inspect how each __getattr__ handles attributes starting with
+- [ ] 4. Identify discrepancy and propose fix: determine minimal code change to preserve original AttributeError from descriptors or raise correct
+- [ ] 5. Create minimal repro/test and run it to confirm fix or to reproduce the incorrect AttributeError message
+- [ ] 2. Locate frame attribute descriptors: inspect frame_transform_graph.frame_attributes and list their keys, types, and origin files
+- [ ] 3. Inspect descriptor implementation for
+- [ ] 4. Reproduce descriptor AttributeError: create a SkyCoord, delete its _obstime (or other private attr) and access sc.obstime to capture the exception message
+- [ ] 5. Implement fix: modify __getattr__ so that when attr in frame_attributes but not in frame.frame_attributes, call frame_transform_graph.frame_attributes[attr].__get__(self) instead of getattr(self,
+- [ ] 6. Verify fix: run the minimal repro and relevant tests to confirm the original misleading AttributeError is no longer produced
+- [ ] 1. Reproduce the bug: create a minimal repro script that triggers the ambiguous AttributeError when accessing a missing or descriptor-caused attribute on SkyCoord
+- [ ] 2. Locate the code: find and open __getattr__ implementations in astropy/coordinates/sky_coordinate.py and astropy/coordinates/baseframe.py (and any related frame attribute helpers)
+- [ ] 3. Root cause analysis: inspect how AttributeError is caught/handled (including inspect.getattr_static usage and re-raising behavior) and identify where descriptor errors or wrong attribute names are being lost
+- [ ] 4. Implement fix: modify exception handling so descriptor errors propagate correctly (only suppress exceptions when getattr_static confirms attribute truly absent), preserve original AttributeError message/attribute name, and update tests/comments
+- [ ] 5. Verify fix: run the minimal repro script and the coordinates-related tests (or relevant pytest -k pattern) and mark TODOs complete as changes are validated
+- [ ] 1. Understand the issue: previous grep produced too much output; run more selective searches (exclude __pycache__, target specific symbols like __getattr__ and frame_transform_graph)
+- [ ] 2. Locate the code: search for
+- [ ] 3. Root cause analysis: inspect the surrounding code (sed -n) for the found locations to understand why AttributeError or large output occurs
+- [ ] 4. Implement fix: prepare minimal changes (e.g., narrow the grep usage, exclude binary files, or patch offending method) and create a small patch
+- [ ] 5. Verify fix: run targeted grep/sed to confirm locations and run the relevant unit tests for coordinates (pytest -q astropy/coordinates/tests/test_sky_coord.py::<specific_test>)
+- [ ] 1. Understand the bug: Reproduce AttributeError when accessing an attribute via __getattr__ on SkyCoord/BaseCoordinateFrame and capture the full traceback
+- [ ] 2. Locate the code: Search for and open __getattr__ definitions in astropy/coordinates (sky_coordinate.py, baseframe.py) and list their line ranges
+- [ ] 3. Root cause analysis: Inspect sky_coordinate.py __getattr__ to find where AttributeError is caught/re-raised; check interactions with descriptors and properties
+- [ ] 4. Implement fix: Change __getattr__ to check for class descriptors/properties first and only raise AttributeError for truly missing attrs; write minimal patch and unit test
+- [ ] 5. Verify fix: Run the minimal repro script and run relevant tests (astropy/coordinates/tests/test_sky_coord.py) to ensure no regressions
+- [ ] 1. Reproduce the AttributeError mismatch: write a minimal repro (e.g., access non-existent attribute on SkyCoord) and capture the exact error message and traceback
+- [ ] 2. Locate __getattr__ implementations: confirm exact locations in astropy/coordinates/baseframe.py (both occurrences) and astropy/coordinates/sky_coordinate.py and list surrounding line numbers
+- [ ] 3. Trace exception flow: run the repro under Python, trace which __getattr__ raises the final AttributeError, and determine where underlying AttributeError from descriptors/attributes is being caught or transformed
+- [ ] 4. Root cause analysis: identify whether AttributeError from attribute access on underlying objects is being mistaken for missing attribute on wrapper and whether the wrong attribute name is used in the re-raised message
+- [ ] 5. Implement fix: modify the relevant __getattr__ (likely in sky_coordinate.py and/or baseframe.py) to avoid swallowing descriptor AttributeError—use inspect.getattr_static or explicit attribute-exists checks and re-raise original exceptions or raise AttributeError with the requested attribute name
+- [ ] 6. Add tests: create a unit test in astropy/coordinates/tests that reproduces the bug and asserts the AttributeError message contains the requested attribute name; run pytest for coordinates
+- [ ] 7. Verify & checkpoint: run full coordinates test subset, fix any regressions, then context_commit a message describing the fix and mark todos complete as each is finished
+- [ ] 3. Reproduce the bug: run a small script that instantiates GenericFrame with frame_attrs and access a missing attribute to capture the exact AttributeError message
+- [ ] 4. Locate all __getattr__ implementations in astropy/coordinates to compare behaviors (grep for
+- [ ] 5. Root cause analysis: inspect GenericFrame.__getattr__ and BaseCoordinateFrame.__getattr__ to determine why the error message is
+- [ ] 6. Implement fix: update GenericFrame.__getattr__ to raise AttributeError via self.__getattribute__(name) or reformat message to match expected standard, and create a small unit test
+- [ ] 7. Verify fix: run the repro and relevant coordinates tests (pytest tests/coordinates or targeted tests) and log results
